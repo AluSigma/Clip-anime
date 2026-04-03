@@ -29,6 +29,7 @@ function buildSafeInlineContentDisposition(filename: string): string {
   const asciiFallback = filename
     .replace(/[^\x20-\x7E]/g, '')
     .replace(/["\\]/g, '')
+    .replace(/;/g, '')
     .replace(/[\r\n]/g, '')
     .trim() || 'clip.mp4';
   const encoded = encodeURIComponent(filename);
@@ -69,7 +70,12 @@ export async function GET(
     return NextResponse.json({ error: 'Clip not found' }, { status: 404 });
   }
 
-  const stream = Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream<Uint8Array>;
+  let stream: ReadableStream<Uint8Array>;
+  try {
+    stream = Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream<Uint8Array>;
+  } catch {
+    return NextResponse.json({ error: 'Clip not found' }, { status: 404 });
+  }
   return new NextResponse(stream, {
     headers: {
       'Content-Type': 'video/mp4',
