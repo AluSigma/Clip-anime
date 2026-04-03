@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProject, updateProject } from '@/lib/db';
+import { getDataDir, getProject, updateProject } from '@/lib/db';
 import { scoreHighlights, buildTranscriptChunks } from '@/lib/bluesminds';
 import fs from 'fs';
 import path from 'path';
@@ -22,7 +22,7 @@ export async function POST(
 
   (async () => {
     try {
-      const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+      const dataDir = getDataDir();
       const chunksFile = path.join(dataDir, `${id}_chunks.json`);
 
       let chunks;

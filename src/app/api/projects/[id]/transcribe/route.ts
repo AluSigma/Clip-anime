@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProject, updateProject } from '@/lib/db';
+import { getDataDir, getProject, updateProject } from '@/lib/db';
 import { submitTranscription, waitForTranscription, getSrtSubtitles } from '@/lib/assemblyai';
 import { buildTranscriptChunks } from '@/lib/bluesminds';
 import fs from 'fs';
@@ -42,7 +42,7 @@ export async function POST(
       });
 
       // Store chunks in data dir for later use
-      const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+      const dataDir = getDataDir();
       fs.writeFileSync(
         path.join(dataDir, `${id}_chunks.json`),
         JSON.stringify(chunks, null, 2)
