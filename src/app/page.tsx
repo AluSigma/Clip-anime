@@ -160,15 +160,15 @@ function ProjectView({ projectId, onBack }: { projectId: string; onBack: () => v
     }
   }, [projectId]);
 
+  const projectStatus = project?.status;
   useEffect(() => {
     fetchProject();
-    const isActive = ACTIVE_STATUSES.includes(project?.status || '');
-    if (isActive || !project) {
+    const isActive = ACTIVE_STATUSES.includes(projectStatus || '');
+    if (isActive || !projectStatus) {
       const interval = setInterval(fetchProject, 3000);
       return () => clearInterval(interval);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchProject, project?.status]);
+  }, [fetchProject, projectStatus]);
 
   const doAction = async (action: string, body?: Record<string, unknown>) => {
     setActionLoading(action);

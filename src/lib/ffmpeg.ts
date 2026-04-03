@@ -65,21 +65,18 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
     '-t', String(duration),
   ];
 
+  const scaleFilter = 'scale=1080:1920:force_original_aspect_ratio=decrease';
+  const padFilter = 'pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black';
+  const subtitleStyle = 'FontSize=18,Alignment=2,MarginV=40,PrimaryColour=&H00FFFFFF&,OutlineColour=&H00000000&,Outline=2';
+
   if (burnSubtitles && srt) {
-    // Write SRT to a temp file
     const srtPath = await writeSrtFile(projectId, srt, clipIndex);
     // Escape path for subtitle filter (FFmpeg filter syntax requires colons to be escaped)
     const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-    
-    args.push(
-      '-vf',
-      `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,subtitles='${escapedSrtPath}':force_style='FontSize=18,Alignment=2,MarginV=40,PrimaryColour=&H00FFFFFF&,OutlineColour=&H00000000&,Outline=2'`,
-    );
+    const subtitleFilter = `subtitles='${escapedSrtPath}':force_style='${subtitleStyle}'`;
+    args.push('-vf', `${scaleFilter},${padFilter},${subtitleFilter}`);
   } else {
-    args.push(
-      '-vf',
-      'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black',
-    );
+    args.push('-vf', `${scaleFilter},${padFilter}`);
   }
 
   args.push(
