@@ -3,19 +3,28 @@ import path from 'path';
 import os from 'os';
 import { Project } from '@/types/project';
 
+function isReadOnlyTaskPath(targetPath: string): boolean {
+  const normalized = path.resolve(targetPath);
+  return normalized === '/var/task' || normalized.startsWith('/var/task/');
+}
+
 function resolveDataDir() {
   const configured = process.env.DATA_DIR;
   if (configured) {
-    // /var/task biasanya read-only di serverless (Vercel/AWS Lambda)
-    if (configured.startsWith('/var/task')) {
+    const resolved = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    // /var/task is usually read-only in serverless (Vercel/AWS Lambda)
+    if (isReadOnlyTaskPath(resolved)) {
       return path.join(os.tmpdir(), 'data');
     }
-    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    return resolved;
   }
 
   // Default: serverless pakai /tmp, local pakai ./data
   const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-  return isServerless ? path.join(os.tmpdir(), 'data') : path.join(process.cwd(), 'data');
+  const defaultPath = path.join(process.cwd(), 'data');
+  return isServerless || isReadOnlyTaskPath(defaultPath)
+    ? path.join(os.tmpdir(), 'data')
+    : defaultPath;
 }
 
 const DATA_DIR = resolveDataDir();
