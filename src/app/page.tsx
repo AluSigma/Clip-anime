@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Project, HighlightCandidate } from '@/types/project';
 
 const ACTIVE_STATUSES = ['fetching', 'transcribing', 'scoring', 'rendering'];
@@ -63,9 +63,12 @@ function formatRelativeTime(value: string): string {
 function isValidYouTubeUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
-    const host = parsed.hostname.toLowerCase();
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
     return (
-      host.includes('youtube.com') ||
+      host === 'youtube.com' ||
+      host === 'www.youtube.com' ||
+      host === 'm.youtube.com' ||
+      host === 'music.youtube.com' ||
       host === 'youtu.be' ||
       host === 'www.youtu.be'
     );
@@ -504,12 +507,29 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
-  const trimmedUrl = url.trim();
-  const isValidUrl = trimmedUrl.length > 0 && isValidYouTubeUrl(trimmedUrl);
-  const sortedProjects = [...projects].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  const { trimmedUrl, isValidUrl } = useMemo(() => {
+    const nextTrimmedUrl = url.trim();
+    return {
+      trimmedUrl: nextTrimmedUrl,
+      isValidUrl: nextTrimmedUrl.length > 0 && isValidYouTubeUrl(nextTrimmedUrl),
+    };
+  }, [url]);
+  const sortedProjects = useMemo(
+    () => [...projects].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [projects]
   );
-  const activeProjectCount = projects.filter((p) => ACTIVE_STATUSES.includes(p.status)).length;
+  const activeProjectCount = useMemo(
+    () => projects.filter((p) => ACTIVE_STATUSES.includes(p.status)).length,
+    [projects]
+  );
+  const inlineUrlError = trimmedUrl && !isValidUrl ? 'Please enter a valid YouTube URL.' : null;
+  const urlDescribedBy = [
+    'youtube-url-help',
+    inlineUrlError ? 'youtube-url-error' : '',
+    createError ? 'youtube-url-submit-error' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -594,7 +614,8 @@ export default function Home() {
         {/* URL Input */}
         <form onSubmit={handleCreate} className="mb-8">
           <label htmlFor="youtube-url" className="block text-sm text-gray-600 mb-2">
-            YouTube URL
+            YouTube URL <span className="text-red-500">*</span>
+            <span className="sr-only">(required)</span>
           </label>
           <div className="flex gap-3">
             <input
@@ -608,6 +629,8 @@ export default function Home() {
                   ? 'border-red-300 focus:ring-red-500'
                   : 'border-gray-300 focus:ring-blue-500'
               }`}
+              aria-invalid={!!inlineUrlError}
+              aria-describedby={urlDescribedBy}
               required
             />
             <button
@@ -618,14 +641,14 @@ export default function Home() {
               {creating ? '⏳ Creating...' : '🚀 Start'}
             </button>
           </div>
-          <p className="mt-2 text-xs text-gray-500">
+          <p id="youtube-url-help" className="mt-2 text-xs text-gray-500">
             Supports youtube.com and youtu.be links.
           </p>
-          {trimmedUrl && !isValidUrl && (
-            <p className="mt-1 text-sm text-red-600">Please use a valid YouTube link format.</p>
+          {inlineUrlError && (
+            <p id="youtube-url-error" className="mt-1 text-sm text-red-600">{inlineUrlError}</p>
           )}
           {createError && (
-            <p className="mt-2 text-sm text-red-600">⚠️ {createError}</p>
+            <p id="youtube-url-submit-error" className="mt-2 text-sm text-red-600">⚠️ {createError}</p>
           )}
         </form>
 
