@@ -10,7 +10,7 @@ function resolveDataDir() {
     if (configured.startsWith('/var/task')) {
       return path.join(os.tmpdir(), 'data');
     }
-    return configured;
+    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
   }
 
   // Default: serverless pakai /tmp, local pakai ./data
@@ -25,6 +25,11 @@ function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+}
+
+export function getDataDir(): string {
+  ensureDir();
+  return DATA_DIR;
 }
 
 function readAll(): Record<string, Project> {
