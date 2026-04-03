@@ -12,9 +12,7 @@ const nextConfig = {
       },
     ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ['fluent-ffmpeg'],
-  },
+  serverExternalPackages: ['fluent-ffmpeg'],
 };
 
 export default nextConfig;
