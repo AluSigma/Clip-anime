@@ -3,6 +3,8 @@ import { getProject, updateProject } from '@/lib/db';
 import { renderClip } from '@/lib/ffmpeg';
 import { RenderResult } from '@/types/project';
 
+const MAX_CLIP_DURATION_SECONDS = 300;
+
 interface RenderRequest {
   start: number;
   end: number;
@@ -31,8 +33,8 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid start/end times' }, { status: 400 });
   }
 
-  if (end - start > 300) {
-    return NextResponse.json({ error: 'Clip duration cannot exceed 300 seconds' }, { status: 400 });
+  if (end - start > MAX_CLIP_DURATION_SECONDS) {
+    return NextResponse.json({ error: `Clip duration cannot exceed ${MAX_CLIP_DURATION_SECONDS} seconds` }, { status: 400 });
   }
 
   updateProject(id, { status: 'rendering', error: null });

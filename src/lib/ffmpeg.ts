@@ -68,7 +68,7 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
   if (burnSubtitles && srt) {
     // Write SRT to a temp file
     const srtPath = await writeSrtFile(projectId, srt, clipIndex);
-    // Escape path for subtitle filter
+    // Escape path for subtitle filter (FFmpeg filter syntax requires colons to be escaped)
     const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
     
     args.push(

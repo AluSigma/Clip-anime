@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Project, HighlightCandidate } from '@/types/project';
 
+const ACTIVE_STATUSES = ['fetching', 'transcribing', 'scoring', 'rendering'];
+
 const STATUS_LABELS: Record<string, string> = {
   created: 'Created',
   fetching: 'Fetching video info...',
@@ -160,7 +162,7 @@ function ProjectView({ projectId, onBack }: { projectId: string; onBack: () => v
 
   useEffect(() => {
     fetchProject();
-    const isActive = ['fetching', 'transcribing', 'scoring', 'rendering'].includes(project?.status || '');
+    const isActive = ACTIVE_STATUSES.includes(project?.status || '');
     if (isActive || !project) {
       const interval = setInterval(fetchProject, 3000);
       return () => clearInterval(interval);
@@ -204,7 +206,7 @@ function ProjectView({ projectId, onBack }: { projectId: string; onBack: () => v
     );
   }
 
-  const isProcessing = ['fetching', 'transcribing', 'scoring', 'rendering'].includes(project.status);
+  const isProcessing = ACTIVE_STATUSES.includes(project.status);
 
   return (
     <div className="space-y-6">
