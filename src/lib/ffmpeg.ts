@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 // /var/task is the deployed app root on AWS Lambda and is read-only at runtime.
 const AWS_LAMBDA_TASK_ROOT = process.env.AWS_LAMBDA_TASK_ROOT;
 
-function isAwsLambdaReadOnlyPath(targetPath: string): boolean {
+function isWithinAwsLambdaTaskRoot(targetPath: string): boolean {
   if (!AWS_LAMBDA_TASK_ROOT) return false;
   const normalized = path.resolve(targetPath);
   return normalized === AWS_LAMBDA_TASK_ROOT || normalized.startsWith(`${AWS_LAMBDA_TASK_ROOT}/`);
@@ -22,14 +22,14 @@ function resolveClipsDir(): string {
   const configured = process.env.CLIPS_DIR;
   if (configured) {
     const resolved = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
-    if (isAwsLambdaReadOnlyPath(resolved)) {
+    if (isWithinAwsLambdaTaskRoot(resolved)) {
       return path.join(os.tmpdir(), 'clips');
     }
     return resolved;
   }
 
   const defaultPath = path.join(process.cwd(), 'public', 'clips');
-  return isServerlessEnvironment() || isAwsLambdaReadOnlyPath(defaultPath)
+  return isServerlessEnvironment() || isWithinAwsLambdaTaskRoot(defaultPath)
     ? path.join(os.tmpdir(), 'clips')
     : defaultPath;
 }

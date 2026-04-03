@@ -27,7 +27,8 @@ function toSafeSegment(value: string): string | null {
   ) {
     return null;
   }
-  if (decoded.endsWith('.') || decoded.startsWith('.') || (decoded.match(/\./g)?.length || 0) > 1) {
+  const dotCount = decoded.split('.').length - 1;
+  if (decoded.startsWith('.') || decoded.endsWith('.') || dotCount < 1) {
     return null;
   }
   if (!decoded.toLowerCase().endsWith('.mp4')) {
