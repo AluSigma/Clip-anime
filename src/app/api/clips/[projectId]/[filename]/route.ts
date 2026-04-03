@@ -23,9 +23,14 @@ function toSafeSegment(value: string): string | null {
     || decoded.includes('/')
     || decoded.includes('\\')
     || decoded.includes(':')
-    || decoded.includes('\0')
     || !/^[A-Za-z0-9._-]+$/.test(decoded)
   ) {
+    return null;
+  }
+  if (decoded.endsWith('.') || decoded.startsWith('.') || (decoded.match(/\./g)?.length || 0) > 1) {
+    return null;
+  }
+  if (!decoded.toLowerCase().endsWith('.mp4')) {
     return null;
   }
   return decoded;
@@ -78,7 +83,7 @@ export async function GET(
     headers: {
       'Content-Type': 'video/mp4',
       'Content-Length': String(stat.size),
-      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Cache-Control': 'private, no-cache, no-store, must-revalidate',
       'Content-Disposition': buildSafeInlineContentDisposition(safeFilename),
     },
   });
