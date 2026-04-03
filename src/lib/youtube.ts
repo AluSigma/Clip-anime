@@ -2,9 +2,17 @@ import axios from 'axios';
 
 const BASE = 'https://youtube-media-downloader.p.rapidapi.com';
 
+function getRapidApiKey(): string {
+  const key = (process.env.RAPIDAPI_KEY || '').trim();
+  if (!key) {
+    throw new Error('RAPIDAPI_KEY is missing. Set it in .env.local');
+  }
+  return key;
+}
+
 function headers() {
   return {
-    'x-rapidapi-key': process.env.RAPIDAPI_KEY || '',
+    'x-rapidapi-key': getRapidApiKey(),
     'x-rapidapi-host': 'youtube-media-downloader.p.rapidapi.com',
   };
 }

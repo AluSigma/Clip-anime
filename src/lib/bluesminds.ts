@@ -3,6 +3,14 @@ import { HighlightCandidate } from '@/types/project';
 
 const ENDPOINT = 'https://api.bluesminds.com/v1/chat/completions';
 
+function getBluesmindsApiKey(): string {
+  const raw = (process.env.BLUESMINDS_API_KEY || '').trim();
+  if (!raw) {
+    throw new Error('BLUESMINDS_API_KEY is missing. Set it in .env.local');
+  }
+  return raw.startsWith('Bearer ') ? raw.slice(7).trim() : raw;
+}
+
 interface TranscriptChunk {
   index: number;
   start: number; // seconds
@@ -82,24 +90,20 @@ Return format (JSON array only):
 
 Ensure each selected segment is 30-90 seconds long. Merge adjacent chunks if needed to hit target duration. Return exactly ${targetCount} candidates sorted by score descending.`;
 
-  const { data } = await axios.post(
-    ENDPOINT,
-    {
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.3,
+  const { data } = await axios.post(ENDPOINT, {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.3,
+  }, {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getBluesmindsApiKey()}`,
     },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.BLUESMINDS_API_KEY || ''}`,
-      },
-      timeout: 60000,
-    }
-  );
+    timeout: 60000,
+  });
 
   const content = data?.choices?.[0]?.message?.content || '[]';
   // Parse JSON from response (strip any markdown code blocks if present)

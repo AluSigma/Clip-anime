@@ -2,9 +2,17 @@ import axios from 'axios';
 
 const BASE = 'https://api.assemblyai.com/v2';
 
+function getAssemblyAiKey(): string {
+  const key = (process.env.ASSEMBLYAI_API_KEY || '').trim();
+  if (!key) {
+    throw new Error('ASSEMBLYAI_API_KEY is missing. Set it in .env.local');
+  }
+  return key;
+}
+
 function aaiHeaders() {
   return {
-    authorization: process.env.ASSEMBLYAI_API_KEY || '',
+    authorization: getAssemblyAiKey(),
     'content-type': 'application/json',
   };
 }
