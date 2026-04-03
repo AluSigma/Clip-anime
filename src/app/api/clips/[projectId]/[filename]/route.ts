@@ -6,7 +6,6 @@ import { NextResponse } from 'next/server';
 import { getClipsDir } from '@/lib/ffmpeg';
 
 const statAsync = promisify(fs.stat);
-const accessAsync = promisify(fs.access);
 
 function toSafeSegment(value: string): string | null {
   if (!value || value.includes('\0')) {
@@ -25,11 +24,9 @@ function toSafeSegment(value: string): string | null {
 }
 
 function buildSafeInlineContentDisposition(filename: string): string {
-  // Keep fallback filename to printable ASCII only (0x20-0x7E) for header compatibility.
+  // Keep fallback filename to a conservative ASCII set for header compatibility.
   const asciiFallback = filename
-    .replace(/[^\x20-\x7E]/g, '')
-    .replace(/["\\]/g, '')
-    .replace(/;/g, '')
+    .replace(/[^A-Za-z0-9._ -]/g, '')
     .replace(/[\r\n]/g, '')
     .trim() || 'clip.mp4';
   const encoded = encodeURIComponent(filename);
@@ -52,12 +49,6 @@ export async function GET(
   const expectedPrefix = path.resolve(clipsRoot) + path.sep;
   if (!filePath.startsWith(expectedPrefix)) {
     return NextResponse.json({ error: 'Invalid clip path' }, { status: 400 });
-  }
-
-  try {
-    await accessAsync(filePath, fs.constants.R_OK);
-  } catch {
-    return NextResponse.json({ error: 'Clip not found' }, { status: 404 });
   }
 
   let stat: fs.Stats;
