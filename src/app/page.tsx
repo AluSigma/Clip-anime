@@ -47,6 +47,33 @@ function formatDuration(seconds: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+function formatRelativeTime(value: string): string {
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return '-';
+  const diffSec = Math.floor((Date.now() - time) / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}d ago`;
+}
+
+function isValidYouTubeUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host.includes('youtube.com') ||
+      host === 'youtu.be' ||
+      host === 'www.youtu.be'
+    );
+  } catch {
+    return false;
+  }
+}
+
 function StepIndicator({ project }: { project: Project }) {
   const steps = [
     { key: ['fetching', 'fetched'], label: '1. Fetch', icon: '🔍' },
@@ -477,6 +504,12 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const trimmedUrl = url.trim();
+  const isValidUrl = trimmedUrl.length > 0 && isValidYouTubeUrl(trimmedUrl);
+  const sortedProjects = [...projects].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+  const activeProjectCount = projects.filter((p) => ACTIVE_STATUSES.includes(p.status)).length;
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -496,7 +529,11 @@ export default function Home() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    if (!trimmedUrl) return;
+    if (!isValidYouTubeUrl(trimmedUrl)) {
+      setCreateError('Please enter a valid YouTube URL');
+      return;
+    }
 
     setCreating(true);
     setCreateError(null);
@@ -505,7 +542,7 @@ export default function Home() {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ url: trimmedUrl }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create project');
@@ -541,33 +578,52 @@ export default function Home() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            🎬 ClipAnime
-          </h1>
-          <p className="text-gray-500 text-lg">
-            Auto-generate short clips from any YouTube video
-          </p>
-        </div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">
+                🎬 ClipAnime
+              </h1>
+              <p className="text-gray-500 text-lg">
+                Auto-generate short clips from any YouTube video
+              </p>
+              <p className="text-sm text-gray-400 mt-2">
+                {activeProjectCount > 0
+                  ? `${activeProjectCount} project(s) currently processing`
+                  : 'Ready to process a new video'}
+              </p>
+            </div>
 
         {/* URL Input */}
         <form onSubmit={handleCreate} className="mb-8">
+          <label htmlFor="youtube-url" className="block text-sm text-gray-600 mb-2">
+            YouTube URL
+          </label>
           <div className="flex gap-3">
             <input
+              id="youtube-url"
               type="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://youtube.com/watch?v=..."
-              className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm"
+              className={`flex-1 border rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 bg-white shadow-sm ${
+                trimmedUrl && !isValidUrl
+                  ? 'border-red-300 focus:ring-red-500'
+                  : 'border-gray-300 focus:ring-blue-500'
+              }`}
               required
             />
             <button
               type="submit"
-              disabled={creating || !url.trim()}
+              disabled={creating || !isValidUrl}
               className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
             >
               {creating ? '⏳ Creating...' : '🚀 Start'}
             </button>
           </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Supports youtube.com and youtu.be links.
+          </p>
+          {trimmedUrl && !isValidUrl && (
+            <p className="mt-1 text-sm text-red-600">Please use a valid YouTube link format.</p>
+          )}
           {createError && (
             <p className="mt-2 text-sm text-red-600">⚠️ {createError}</p>
           )}
@@ -575,9 +631,9 @@ export default function Home() {
 
         {/* Projects List */}
         <div>
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">
-            Recent Projects
-          </h2>
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">
+              Recent Projects ({projects.length})
+            </h2>
 
           {loadingProjects ? (
             <div className="flex items-center justify-center py-12">
@@ -589,11 +645,11 @@ export default function Home() {
               <p>No projects yet. Paste a YouTube URL to get started!</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {projects.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setSelectedProjectId(p.id)}
+              <div className="space-y-3">
+               {sortedProjects.map((p) => (
+                 <button
+                   key={p.id}
+                   onClick={() => setSelectedProjectId(p.id)}
                   className="w-full flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-blue-200 transition-all text-left"
                 >
                   {p.thumbnail ? (
@@ -608,12 +664,16 @@ export default function Home() {
                       🎬
                     </div>
                   )}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">
-                      {p.title || p.videoId || 'Loading...'}
-                    </p>
-                    <p className="text-sm text-gray-500 truncate">{p.sourceUrl}</p>
-                  </div>
+                   <div className="flex-1 min-w-0">
+                     <p className="font-medium text-gray-900 truncate">
+                       {p.title || p.videoId || 'Loading...'}
+                     </p>
+                     <p className="text-sm text-gray-500 truncate">{p.sourceUrl}</p>
+                     <p className="text-xs text-gray-400 mt-0.5">
+                       Updated {formatRelativeTime(p.updatedAt)}
+                       {p.duration > 0 ? ` • ${formatTime(p.duration)}` : ''}
+                     </p>
+                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[p.status]}`}>
                       {STATUS_LABELS[p.status] || p.status}
