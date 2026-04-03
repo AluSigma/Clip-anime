@@ -11,6 +11,10 @@ function isReadOnlyTaskPath(targetPath: string): boolean {
   return normalized === '/var/task' || normalized.startsWith('/var/task/');
 }
 
+function isServerlessEnvironment(): boolean {
+  return !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+}
+
 function resolveClipsDir(): string {
   const configured = process.env.CLIPS_DIR;
   if (configured) {
@@ -21,9 +25,8 @@ function resolveClipsDir(): string {
     return resolved;
   }
 
-  const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
   const defaultPath = path.join(process.cwd(), 'public', 'clips');
-  return isServerless || isReadOnlyTaskPath(defaultPath)
+  return isServerlessEnvironment() || isReadOnlyTaskPath(defaultPath)
     ? path.join(os.tmpdir(), 'clips')
     : defaultPath;
 }
