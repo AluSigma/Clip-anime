@@ -1,8 +1,24 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { Project } from '@/types/project';
 
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+function resolveDataDir() {
+  const configured = process.env.DATA_DIR;
+  if (configured) {
+    // /var/task biasanya read-only di serverless (Vercel/AWS Lambda)
+    if (configured.startsWith('/var/task')) {
+      return path.join(os.tmpdir(), 'data');
+    }
+    return configured;
+  }
+
+  // Default: serverless pakai /tmp, local pakai ./data
+  const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+  return isServerless ? path.join(os.tmpdir(), 'data') : path.join(process.cwd(), 'data');
+}
+
+const DATA_DIR = resolveDataDir();
 const DB_FILE = path.join(DATA_DIR, 'projects.json');
 
 function ensureDir() {
