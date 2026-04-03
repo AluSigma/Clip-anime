@@ -1,11 +1,34 @@
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
-const CLIPS_DIR = process.env.CLIPS_DIR || path.join(process.cwd(), 'public', 'clips');
+function isReadOnlyTaskPath(targetPath: string): boolean {
+  const normalized = path.resolve(targetPath);
+  return normalized === '/var/task' || normalized.startsWith('/var/task/');
+}
+
+function resolveClipsDir(): string {
+  const configured = process.env.CLIPS_DIR;
+  if (configured) {
+    const resolved = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    if (isReadOnlyTaskPath(resolved)) {
+      return path.join(os.tmpdir(), 'clips');
+    }
+    return resolved;
+  }
+
+  const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const defaultPath = path.join(process.cwd(), 'public', 'clips');
+  return isServerless || isReadOnlyTaskPath(defaultPath)
+    ? path.join(os.tmpdir(), 'clips')
+    : defaultPath;
+}
+
+const CLIPS_DIR = resolveClipsDir();
 
 function ensureClipsDir() {
   if (!fs.existsSync(CLIPS_DIR)) {
@@ -100,8 +123,7 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
     throw new Error(`FFmpeg render failed: ${message}`);
   }
 
-  const relPath = path.relative(path.join(process.cwd(), 'public'), outPath);
-  const url = '/' + relPath.replace(/\\/g, '/');
+  const url = `/api/clips/${encodeURIComponent(projectId)}/${encodeURIComponent(outFilename)}`;
 
   return {
     path: outPath,
@@ -116,4 +138,9 @@ export function cleanupProjectFiles(projectId: string): void {
   if (fs.existsSync(dir)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+export function getClipsDir(): string {
+  ensureClipsDir();
+  return CLIPS_DIR;
 }
