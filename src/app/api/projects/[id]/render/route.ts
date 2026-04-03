@@ -43,7 +43,7 @@ export async function POST(
     try {
       const output = await renderClip({
         projectId: id,
-        videoUrl: project.downloadUrl!,
+        videoUrl: project.downloadUrl as string,
         start,
         end,
         srt: project.srt || undefined,

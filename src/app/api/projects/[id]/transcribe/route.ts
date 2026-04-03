@@ -28,7 +28,7 @@ export async function POST(
   // Run async in background
   (async () => {
     try {
-      const transcriptId = await submitTranscription(project.downloadUrl!, 'en');
+      const transcriptId = await submitTranscription(project.downloadUrl as string, 'en');
       const result = await waitForTranscription(transcriptId);
       const srt = await getSrtSubtitles(transcriptId);
 

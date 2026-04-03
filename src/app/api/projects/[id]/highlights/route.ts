@@ -31,7 +31,7 @@ export async function POST(
       } else {
         // Fallback: rebuild from transcript text with rough timestamps.
         // Uses word index * 500ms as a rough timestamp approximation when word-level timestamps are unavailable.
-        const words = project.transcriptText!.split(' ').map((text, i) => ({
+        const words = (project.transcriptText as string).split(' ').map((text, i) => ({
           text,
           start: i * 500,
           end: (i + 1) * 500,
