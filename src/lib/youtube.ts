@@ -33,25 +33,44 @@ export interface VideoDetails {
   downloadUrl: string | null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function pickBestVideoUrl(data: any): string | null {
+interface RapidApiVideoItem {
+  url?: string;
+  extension?: string;
+  mimeType?: string;
+  height?: number;
+}
+
+interface RapidApiResponse {
+  title?: string;
+  lengthSeconds?: number;
+  duration?: number | string;
+  thumbnails?: Array<{ url: string }>;
+  thumbnail?: { url: string } | string;
+  channel?: { name: string } | string;
+  videos?: { items?: RapidApiVideoItem[] } | RapidApiVideoItem[];
+  audios?: { items?: RapidApiVideoItem[] } | RapidApiVideoItem[];
+}
+
+function pickBestVideoUrl(data: RapidApiResponse): string | null {
   // Try videos array first (muxed mp4 with audio)
-  const videos = data?.videos?.items || data?.videos || [];
-  if (Array.isArray(videos) && videos.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const videoSource = data?.videos;
+  const videos: RapidApiVideoItem[] = Array.isArray(videoSource)
+    ? videoSource
+    : (videoSource as { items?: RapidApiVideoItem[] })?.items || [];
+  if (videos.length > 0) {
     const mp4 = videos
-      .filter((v: any) => v?.url && (v?.extension === 'mp4' || v?.mimeType?.includes('mp4')))
-      .sort((a: any, b: any) => (b?.height || 0) - (a?.height || 0));
-    const best = mp4.find((v: any) => (v?.height || 0) <= 1080) || mp4[0];
+      .filter((v) => v?.url && (v?.extension === 'mp4' || v?.mimeType?.includes('mp4')))
+      .sort((a, b) => (b?.height || 0) - (a?.height || 0));
+    const best = mp4.find((v) => (v?.height || 0) <= 1080) || mp4[0];
     if (best?.url) return best.url;
   }
 
   // Try audios array as fallback (audio-only for transcription)
-  const audios = data?.audios?.items || data?.audios || [];
-  if (Array.isArray(audios) && audios.length > 0) {
-    const best = audios[0];
-    if (best?.url) return best.url;
-  }
+  const audioSource = data?.audios;
+  const audios: RapidApiVideoItem[] = Array.isArray(audioSource)
+    ? audioSource
+    : (audioSource as { items?: RapidApiVideoItem[] })?.items || [];
+  if (audios.length > 0 && audios[0]?.url) return audios[0].url;
 
   return null;
 }
@@ -59,11 +78,12 @@ function pickBestVideoUrl(data: any): string | null {
 export async function getVideoDetails(urlOrId: string): Promise<VideoDetails> {
   const videoId = extractVideoId(urlOrId);
 
-  const { data } = await axios.get(`${BASE}/v2/video/details`, {
+  const { data: rawData } = await axios.get(`${BASE}/v2/video/details`, {
     params: { videoId },
     headers: headers(),
     timeout: 20000,
   });
+  const data = rawData as RapidApiResponse;
 
   // Parse duration - may be in seconds or "HH:MM:SS" format
   let duration = 0;
@@ -77,20 +97,21 @@ export async function getVideoDetails(urlOrId: string): Promise<VideoDetails> {
     else if (parts.length === 2) duration = parts[0] * 60 + parts[1];
   }
 
+  const thumbnailRaw = data?.thumbnail;
   const thumbnail =
     data?.thumbnails?.[0]?.url ||
-    data?.thumbnail?.url ||
-    data?.thumbnail ||
+    (typeof thumbnailRaw === 'object' && thumbnailRaw !== null ? thumbnailRaw.url : thumbnailRaw) ||
     null;
 
   const downloadUrl = pickBestVideoUrl(data);
+  const channelRaw = data?.channel;
 
   return {
     id: videoId,
     title: data?.title || 'Untitled',
     duration,
-    thumbnail,
-    channel: data?.channel?.name || data?.channel || null,
+    thumbnail: thumbnail || null,
+    channel: (typeof channelRaw === 'object' && channelRaw !== null ? channelRaw.name : channelRaw) || null,
     downloadUrl,
   };
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Project, HighlightCandidate } from '@/types/project';
 
 const ACTIVE_STATUSES = ['fetching', 'transcribing', 'scoring', 'rendering'];
+const CUSTOM_CLIP_INDEX = 99;
 
 const STATUS_LABELS: Record<string, string> = {
   created: 'Created',
@@ -340,7 +341,7 @@ function ProjectView({ projectId, onBack }: { projectId: string; onBack: () => v
         <CustomRenderPanel
           project={project}
           onRender={(start, end, burnSubs) =>
-            doAction('render', { start, end, burnSubtitles: burnSubs, clipIndex: 99 })
+            doAction('render', { start, end, burnSubtitles: burnSubs, clipIndex: CUSTOM_CLIP_INDEX })
           }
           isRendering={actionLoading === 'render' || project.status === 'rendering'}
         />
