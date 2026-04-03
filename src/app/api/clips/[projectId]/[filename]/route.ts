@@ -8,7 +8,7 @@ import { getClipsDir } from '@/lib/ffmpeg';
 const statAsync = promisify(fs.stat);
 
 function toSafeSegment(value: string): string | null {
-  if (!value || value.includes('\0')) {
+  if (!value) {
     return null;
   }
   let decoded = value;
@@ -65,7 +65,7 @@ export async function GET(
   try {
     stream = Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream<Uint8Array>;
   } catch {
-    return NextResponse.json({ error: 'Clip not found' }, { status: 404 });
+    return NextResponse.json({ error: 'Failed to stream clip' }, { status: 500 });
   }
   return new NextResponse(stream, {
     headers: {
