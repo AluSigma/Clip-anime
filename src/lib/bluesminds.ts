@@ -102,7 +102,6 @@ Ensure each selected segment is 30-90 seconds long. Merge adjacent chunks if nee
   );
 
   const content = data?.choices?.[0]?.message?.content || '[]';
-  
   // Parse JSON from response (strip any markdown code blocks if present)
   const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   const parsed = JSON.parse(jsonStr) as HighlightCandidate[];

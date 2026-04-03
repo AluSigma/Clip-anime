@@ -30,7 +30,7 @@ export async function POST(
         chunks = JSON.parse(fs.readFileSync(chunksFile, 'utf-8'));
       } else {
         // Fallback: rebuild from transcript text with rough timestamps.
-        // 500ms per word is a rough approximation used when word-level timestamps are unavailable.
+        // Uses word index * 500ms as a rough timestamp approximation when word-level timestamps are unavailable.
         const words = project.transcriptText!.split(' ').map((text, i) => ({
           text,
           start: i * 500,
