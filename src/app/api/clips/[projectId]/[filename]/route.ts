@@ -5,13 +5,14 @@ import { NextResponse } from 'next/server';
 import { getClipsDir } from '@/lib/ffmpeg';
 
 function toSafeSegment(value: string): string | null {
-  if (!value || value.includes('/') || value.includes('\\') || value.includes('\0')) {
+  if (!value || value.includes('..') || value.includes('/') || value.includes('\\') || value.includes('\0')) {
     return null;
   }
   return value;
 }
 
 function buildSafeInlineContentDisposition(filename: string): string {
+  // Keep fallback filename to printable ASCII only (0x20-0x7E) for header compatibility.
   const asciiFallback = filename
     .replace(/[^\x20-\x7E]/g, '')
     .replace(/[\\"]/g, '')

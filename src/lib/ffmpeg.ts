@@ -6,7 +6,7 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
-function isReadOnlyTaskPath(targetPath: string): boolean {
+function isAwsLambdaReadOnlyPath(targetPath: string): boolean {
   const normalized = path.resolve(targetPath);
   return normalized === '/var/task' || normalized.startsWith('/var/task/');
 }
@@ -19,14 +19,14 @@ function resolveClipsDir(): string {
   const configured = process.env.CLIPS_DIR;
   if (configured) {
     const resolved = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
-    if (isReadOnlyTaskPath(resolved)) {
+    if (isAwsLambdaReadOnlyPath(resolved)) {
       return path.join(os.tmpdir(), 'clips');
     }
     return resolved;
   }
 
   const defaultPath = path.join(process.cwd(), 'public', 'clips');
-  return isServerlessEnvironment() || isReadOnlyTaskPath(defaultPath)
+  return isServerlessEnvironment() || isAwsLambdaReadOnlyPath(defaultPath)
     ? path.join(os.tmpdir(), 'clips')
     : defaultPath;
 }
