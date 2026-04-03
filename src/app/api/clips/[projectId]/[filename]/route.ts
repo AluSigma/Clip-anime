@@ -17,7 +17,15 @@ function toSafeSegment(value: string): string | null {
   } catch {
     return null;
   }
-  if (!decoded || decoded.includes('..') || decoded.includes('/') || decoded.includes('\\') || decoded.includes('\0')) {
+  if (
+    !decoded
+    || decoded.includes('..')
+    || decoded.includes('/')
+    || decoded.includes('\\')
+    || decoded.includes(':')
+    || decoded.includes('\0')
+    || !/^[A-Za-z0-9._-]+$/.test(decoded)
+  ) {
     return null;
   }
   return decoded;
@@ -27,7 +35,6 @@ function buildSafeInlineContentDisposition(filename: string): string {
   // Keep fallback filename to a conservative ASCII set for header compatibility.
   const asciiFallback = filename
     .replace(/[^A-Za-z0-9._ -]/g, '')
-    .replace(/[\r\n]/g, '')
     .trim() || 'clip.mp4';
   const encoded = encodeURIComponent(filename);
   return `inline; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;

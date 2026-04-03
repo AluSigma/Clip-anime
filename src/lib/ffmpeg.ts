@@ -6,9 +6,10 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 // /var/task is the deployed app root on AWS Lambda and is read-only at runtime.
-const AWS_LAMBDA_TASK_ROOT = process.env.AWS_LAMBDA_TASK_ROOT || '/var/task';
+const AWS_LAMBDA_TASK_ROOT = process.env.AWS_LAMBDA_TASK_ROOT;
 
 function isAwsLambdaReadOnlyPath(targetPath: string): boolean {
+  if (!AWS_LAMBDA_TASK_ROOT) return false;
   const normalized = path.resolve(targetPath);
   return normalized === AWS_LAMBDA_TASK_ROOT || normalized.startsWith(`${AWS_LAMBDA_TASK_ROOT}/`);
 }
