@@ -12,7 +12,7 @@ function resolveDataDir() {
   const configured = process.env.DATA_DIR;
   if (configured) {
     const resolved = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
-    // /var/task biasanya read-only di serverless (Vercel/AWS Lambda)
+    // /var/task is usually read-only in serverless (Vercel/AWS Lambda)
     if (isReadOnlyTaskPath(resolved)) {
       return path.join(os.tmpdir(), 'data');
     }
