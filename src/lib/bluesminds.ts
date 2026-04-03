@@ -3,12 +3,16 @@ import { HighlightCandidate } from '@/types/project';
 
 const ENDPOINT = 'https://api.bluesminds.com/v1/chat/completions';
 
-function getBluesmindsApiKey(): string {
+function getBluesmindsAuthorizationHeader(): string {
   const raw = (process.env.BLUESMINDS_API_KEY || '').trim();
   if (!raw) {
     throw new Error('BLUESMINDS_API_KEY is missing. Set it in .env.local');
   }
-  return raw.startsWith('Bearer ') ? raw.slice(7).trim() : raw;
+  const token = raw.replace(/^Bearer\s+/i, '').trim();
+  if (!token) {
+    throw new Error('BLUESMINDS_API_KEY is invalid. Provide a non-empty API key');
+  }
+  return `Bearer ${token}`;
 }
 
 interface TranscriptChunk {
@@ -100,7 +104,7 @@ Ensure each selected segment is 30-90 seconds long. Merge adjacent chunks if nee
   }, {
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${getBluesmindsApiKey()}`,
+      Authorization: getBluesmindsAuthorizationHeader(),
     },
     timeout: 60000,
   });
