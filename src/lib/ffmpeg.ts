@@ -5,10 +5,11 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
+const AWS_LAMBDA_READ_ONLY_ROOT = '/var/task';
 
 function isAwsLambdaReadOnlyPath(targetPath: string): boolean {
   const normalized = path.resolve(targetPath);
-  return normalized === '/var/task' || normalized.startsWith('/var/task/');
+  return normalized === AWS_LAMBDA_READ_ONLY_ROOT || normalized.startsWith(`${AWS_LAMBDA_READ_ONLY_ROOT}/`);
 }
 
 function isServerlessEnvironment(): boolean {
