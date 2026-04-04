@@ -6,6 +6,7 @@ const BASE = 'https://youtube-info-download-api.p.rapidapi.com';
 const POLLING_INTERVAL_MS = 2000;
 const POLLING_TIMEOUT_MS = 8 * 60 * 1000;
 const DOWNLOAD_DIR = path.join(process.cwd(), 'public', 'clips', 'sources');
+const SOURCE_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 function getRapidApiKey(): string {
   const key = (process.env.RAPIDAPI_KEY || '').trim();
@@ -252,7 +253,31 @@ async function pollDownloadUrl(progressUrl: string): Promise<string> {
 
 async function cacheVideoStream(videoId: string, downloadUrl: string): Promise<{ localVideoPath: string | null; localVideoUrl: string | null }> {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
-  const filename = `${videoId}_${Date.now()}.mp4`;
+
+  const cachedFiles = fs.readdirSync(DOWNLOAD_DIR)
+    .filter((file) => file.startsWith(`${videoId}_`) && file.endsWith('.mp4'))
+    .map((file) => {
+      const fullPath = path.join(DOWNLOAD_DIR, file);
+      try {
+        const stat = fs.statSync(fullPath);
+        return { file, fullPath, mtimeMs: stat.mtimeMs };
+      } catch {
+        return null;
+      }
+    })
+    .filter((item): item is { file: string; fullPath: string; mtimeMs: number } => item !== null)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  if (cachedFiles[0] && Date.now() - cachedFiles[0].mtimeMs < SOURCE_CACHE_MAX_AGE_MS) {
+    const filename = cachedFiles[0].file;
+    const localUrl = `/clips/sources/${encodeURIComponent(filename)}`;
+    return {
+      localVideoPath: cachedFiles[0].fullPath,
+      localVideoUrl: localUrl,
+    };
+  }
+
+  const filename = `${videoId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`;
   const outputPath = path.join(DOWNLOAD_DIR, filename);
 
   const response = await axios.get(downloadUrl, {
@@ -275,6 +300,17 @@ async function cacheVideoStream(videoId: string, downloadUrl: string): Promise<{
   });
 
   const localUrl = `/clips/sources/${encodeURIComponent(filename)}`;
+
+  for (const old of cachedFiles) {
+    if (old.fullPath !== outputPath) {
+      try {
+        fs.unlinkSync(old.fullPath);
+      } catch {
+        // ignore cleanup failure
+      }
+    }
+  }
+
   return {
     localVideoPath: outputPath,
     localVideoUrl: localUrl,
@@ -315,7 +351,11 @@ export async function getVideoDetails(urlOrId: string): Promise<VideoDetails> {
     const cached = await cacheVideoStream(videoId, resolvedDownloadUrl);
     localVideoPath = cached.localVideoPath;
     localVideoUrl = cached.localVideoUrl;
-  } catch {
+  } catch (cacheError: unknown) {
+    console.warn(
+      '[youtube] Source caching failed, falling back to direct download URL:',
+      cacheError instanceof Error ? cacheError.message : String(cacheError),
+    );
     localVideoPath = null;
     localVideoUrl = null;
   }
