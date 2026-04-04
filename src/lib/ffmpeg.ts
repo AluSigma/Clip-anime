@@ -25,7 +25,7 @@ function isExecutableBinary(filePath: string): boolean {
   }
 }
 
-function resolveFfmpegBinary(): string {
+async function resolveFfmpegBinary(): Promise<string> {
   if (resolvedFfmpegBinary) {
     return resolvedFfmpegBinary;
   }
@@ -79,7 +79,7 @@ function resolveFfmpegBinary(): string {
     }
   }
 
-  const bundledBinary = resolveBundledFfmpegBinary();
+  const bundledBinary = await resolveBundledFfmpegBinary();
   if (bundledBinary) {
     attemptedPaths.push(bundledBinary);
     if (isExecutableBinary(bundledBinary)) {
@@ -96,21 +96,13 @@ function resolveFfmpegBinary(): string {
   );
 }
 
-function resolveBundledFfmpegBinary(): string | null {
-  const platform = `${process.platform}-${process.arch}`;
-  const binaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-  const candidates = [
-    path.join(process.cwd(), 'node_modules', '@ffmpeg-installer', platform, binaryName),
-    path.join(__dirname, '..', '..', '..', 'node_modules', '@ffmpeg-installer', platform, binaryName),
-  ];
-
-  for (const candidate of candidates) {
-    if (isExecutableBinary(candidate)) {
-      return candidate;
-    }
+async function resolveBundledFfmpegBinary(): Promise<string | null> {
+  try {
+    const installer = await import('@ffmpeg-installer/ffmpeg');
+    return installer.path && isExecutableBinary(installer.path) ? installer.path : null;
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 function isReadOnlyTaskPath(targetPath: string): boolean {
@@ -223,7 +215,7 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
   );
 
   try {
-    const ffmpegBin = resolveFfmpegBinary();
+    const ffmpegBin = await resolveFfmpegBinary();
     await execFileAsync(ffmpegBin, args, { timeout: 300000 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

@@ -12,7 +12,7 @@ const nextConfig = {
       },
     ],
   },
-  serverExternalPackages: ['fluent-ffmpeg'],
+  serverExternalPackages: ['fluent-ffmpeg', '@ffmpeg-installer/ffmpeg'],
 };
 
 export default nextConfig;
