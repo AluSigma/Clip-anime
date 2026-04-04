@@ -214,7 +214,7 @@ function toSafeProviderMessage(input: unknown): string | null {
   const normalized = input.replace(/\s+/g, ' ').trim();
   if (!normalized) return null;
   if (normalized.length > 180) return null;
-  if (/[`$<>]/.test(normalized)) return null;
+  if (!/^[a-zA-Z0-9 .,!?():/_-]+$/.test(normalized)) return null;
   return normalized;
 }
 
@@ -225,7 +225,7 @@ function mapYoutubeApiError(err: unknown): Error {
 
   const status = err.response?.status;
   if (status === 400) {
-    return new Error('Failed to fetch video details. Please ensure the video URL is valid and publicly accessible.');
+    return new Error('Failed to fetch video details. Please ensure the URL is a valid public YouTube link (youtube.com/watch?v=VIDEO_ID or youtu.be/VIDEO_ID).');
   }
   if (status === 401 || status === 403) {
     return new Error('Failed to fetch video details due to provider authorization.');
@@ -235,8 +235,9 @@ function mapYoutubeApiError(err: unknown): Error {
   }
 
   const providerPayload = asRecord(err.response?.data);
-  const providerMessage = providerPayload ? getFirstString(providerPayload, ['message', 'error', 'detail']) : null;
-  const safeProviderMessage = toSafeProviderMessage(providerMessage);
+  const safeProviderMessage = toSafeProviderMessage(
+    providerPayload ? getFirstString(providerPayload, ['message', 'error', 'detail']) : null,
+  );
   if (safeProviderMessage) {
     return new Error(safeProviderMessage);
   }
