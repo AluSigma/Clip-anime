@@ -5,6 +5,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
+let resolvedFfmpegBinary: string | null = null;
 
 function isExecutableBinary(filePath: string): boolean {
   try {
@@ -25,6 +26,10 @@ function isExecutableBinary(filePath: string): boolean {
 }
 
 function resolveFfmpegBinary(): string {
+  if (resolvedFfmpegBinary) {
+    return resolvedFfmpegBinary;
+  }
+
   const configured = process.env.FFMPEG_PATH?.trim();
   if (configured) {
     const resolvedConfigured = path.isAbsolute(configured)
@@ -35,7 +40,8 @@ function resolveFfmpegBinary(): string {
         `Invalid FFMPEG_PATH: "${configured}" does not point to an executable ffmpeg binary.`,
       );
     }
-    return resolvedConfigured;
+    resolvedFfmpegBinary = resolvedConfigured;
+    return resolvedFfmpegBinary;
   }
 
   const candidates = process.platform === 'win32'
@@ -44,11 +50,24 @@ function resolveFfmpegBinary(): string {
 
   for (const candidate of candidates) {
     if (isExecutableBinary(candidate)) {
-      return candidate;
+      resolvedFfmpegBinary = candidate;
+      return resolvedFfmpegBinary;
     }
   }
 
-  return 'ffmpeg';
+  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const entry of pathEntries) {
+    const binaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const candidate = path.join(entry, binaryName);
+    if (isExecutableBinary(candidate)) {
+      resolvedFfmpegBinary = candidate;
+      return resolvedFfmpegBinary;
+    }
+  }
+
+  throw new Error(
+    'FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to an executable ffmpeg binary path.',
+  );
 }
 
 function isReadOnlyTaskPath(targetPath: string): boolean {
@@ -160,9 +179,10 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
     outPath,
   );
 
-  const ffmpegBin = resolveFfmpegBinary();
+  let ffmpegBin = 'ffmpeg';
 
   try {
+    ffmpegBin = resolveFfmpegBinary();
     await execFileAsync(ffmpegBin, args, { timeout: 300000 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
