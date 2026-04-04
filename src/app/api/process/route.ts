@@ -14,8 +14,10 @@ export const dynamic = 'force-dynamic';
 type JsonRecord = Record<string, unknown>;
 const POLLING_INTERVAL_MS = 2000;
 const MAX_POLLING_ATTEMPTS = 20;
-const MIN_VALID_FILE_SIZE_BYTES = 50 * 1024;
+const MIN_VALID_FILE_SIZE_BYTES = 50000;
 const MAX_CLIPS = 6;
+const OPENAI_CHAT_COMPLETIONS_URL =
+  process.env.OPENAI_API_BASE_URL?.trim() || 'https://api.openai.com/v1/chat/completions';
 
 interface ClipSpec {
   title: string;
@@ -35,6 +37,18 @@ function toNumber(value: unknown): number {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+function logError(error: unknown): void {
+  if (axios.isAxiosError(error)) {
+    console.error(error.response?.data || error.message);
+    return;
+  }
+  if (error instanceof Error) {
+    console.error(error.message);
+    return;
+  }
+  console.error(String(error));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -70,12 +84,64 @@ function getRapidApiKey(): string {
 }
 
 function getBluesmindsApiKey(): string {
-  const raw = (process.env.BLUESMINDS_API_KEY || '').trim();
+  const raw = (process.env.OPENAI_API_KEY || process.env.BLUESMINDS_API_KEY || '').trim();
   if (!raw) throw new Error('BLUESMINDS_API_KEY is missing');
   if (/^Bearer\s+/i.test(raw)) {
     return raw.replace(/^Bearer\s+/i, '').trim();
   }
   return raw;
+}
+
+function normalizeVideoUrl(videoUrl: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(videoUrl.trim());
+  } catch {
+    throw new Error('Invalid URL format');
+  }
+
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  const pathnameParts = parsed.pathname.split('/').filter(Boolean);
+  const trackingParams = new Set([
+    'si',
+    'feature',
+    'pp',
+    'fbclid',
+    'gclid',
+    'igshid',
+  ]);
+
+  for (const key of Array.from(parsed.searchParams.keys())) {
+    if (trackingParams.has(key) || key.toLowerCase().startsWith('utm_')) {
+      parsed.searchParams.delete(key);
+    }
+  }
+
+  if (host === 'youtu.be') {
+    const videoId = pathnameParts[0] || '';
+    if (!videoId) throw new Error('Invalid youtu.be URL');
+    return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+  }
+
+  if (
+    host === 'youtube.com' ||
+    host === 'm.youtube.com' ||
+    host === 'music.youtube.com'
+  ) {
+    if (pathnameParts[0] === 'shorts') {
+      const videoId = pathnameParts[1] || '';
+      if (!videoId) throw new Error('Invalid YouTube Shorts URL');
+      return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+    }
+
+    if (pathnameParts[0] === 'watch') {
+      const watchId = parsed.searchParams.get('v')?.trim() || '';
+      if (!watchId) throw new Error('Invalid YouTube watch URL (missing v)');
+      return `https://www.youtube.com/watch?v=${encodeURIComponent(watchId)}`;
+    }
+  }
+
+  return parsed.toString();
 }
 
 function getFfmpegBin(): string {
@@ -111,7 +177,10 @@ async function initiate(videoUrl: string): Promise<{ jobId: string; title: strin
       format: '720',
       url: videoUrl,
       apikey: getRapidApiKey(),
-      add_info: 1,
+      add_info: '1',
+      audio_quality: '128',
+      allow_extended_duration: '1',
+      max_duration: '240',
     },
     timeout: 30000,
   });
@@ -126,8 +195,7 @@ async function initiate(videoUrl: string): Promise<{ jobId: string; title: strin
 
 async function pollDownloadUrl(jobId: string): Promise<string> {
   for (let i = 0; i < MAX_POLLING_ATTEMPTS; i += 1) {
-    const { data } = await axios.get('https://p.savenow.to/ajax/progress', {
-      params: { id: jobId },
+    const { data } = await axios.get(`https://p.savenow.to/ajax/progress?id=${encodeURIComponent(jobId)}`, {
       timeout: 30000,
     });
 
@@ -136,12 +204,21 @@ async function pollDownloadUrl(jobId: string): Promise<string> {
     const progress = toNumber(payload.progress);
 
     if (success === 1 && progress === 1000) {
-      const url = extractDownloadUrl(payload);
+      const primaryDownloadUrl =
+        typeof payload.download_url === 'string' ? payload.download_url.trim() : '';
+      const alternatives = Array.isArray(payload.alternative_download_urls)
+        ? payload.alternative_download_urls
+        : [];
+      const firstAlternative = toRecord(alternatives[0]);
+      const fallbackUrl = typeof firstAlternative?.url === 'string' ? firstAlternative.url.trim() : '';
+      const url = primaryDownloadUrl || fallbackUrl;
       if (url) return url;
       throw new Error('Download completed but no download_url available');
     }
 
-    await sleep(POLLING_INTERVAL_MS);
+    if (i < MAX_POLLING_ATTEMPTS - 1) {
+      await sleep(POLLING_INTERVAL_MS);
+    }
   }
 
   throw new Error('Timeout while polling download progress');
@@ -158,7 +235,7 @@ async function streamDownloadToFile(downloadUrl: string, title: string): Promise
     timeout: 180000,
     maxRedirects: 5,
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
       Referer: 'https://www.youtube.com/',
       Accept: '*/*',
     },
@@ -181,7 +258,7 @@ async function streamDownloadToFile(downloadUrl: string, title: string): Promise
 }
 
 async function analyzeWithAi(videoTitle: string): Promise<ClipSpec[]> {
-  const instruction = 'Strict JSON Array only: [{"title":"...","start_time":"MM:SS","end_time":"MM:SS"}]';
+  const instruction = 'Return ONLY a raw JSON array: [{"title":"...","start_time":"MM:SS","end_time":"MM:SS"}]';
 
   const prompt = [
     'You are a short-video editor AI for YouTube Shorts.',
@@ -193,10 +270,15 @@ async function analyzeWithAi(videoTitle: string): Promise<ClipSpec[]> {
   ].join('\n');
 
   const { data } = await axios.post(
-    'https://api.bluesminds.com/v1/chat/completions',
+    OPENAI_CHAT_COMPLETIONS_URL,
     {
       model: 'gpt-4o-mini',
       messages: [
+        {
+          role: 'system',
+          content:
+            'You are a machine. Output ONLY valid raw JSON array. No markdown, no backticks, no explanation.',
+        },
         {
           role: 'user',
           content: prompt,
@@ -214,13 +296,16 @@ async function analyzeWithAi(videoTitle: string): Promise<ClipSpec[]> {
   );
 
   const content = String(data?.choices?.[0]?.message?.content || '').trim();
-  const normalized = content.replace(/```(?:json)?/gi, '').trim();
-  const arrayStart = normalized.indexOf('[');
-  const arrayEnd = normalized.lastIndexOf(']');
-  if (arrayStart === -1 || arrayEnd === -1 || arrayEnd < arrayStart) {
+  const normalized = content
+    .replace(/```json\s*/gi, '')
+    .replace(/```/g, '')
+    .replace(/https?:\/\/googleusercontent\.com\/immersive_entry_chip\/\d+/gi, '')
+    .trim();
+  const arrayMatch = normalized.match(/\[[\s\S]*\]/);
+  if (!arrayMatch) {
     throw new Error('AI returned non-JSON array response');
   }
-  const parsed = JSON.parse(normalized.slice(arrayStart, arrayEnd + 1));
+  const parsed = JSON.parse(arrayMatch[0]);
 
   if (!Array.isArray(parsed) || parsed.length === 0) {
     throw new Error('AI returned invalid clip list');
@@ -277,7 +362,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'url is required' }, { status: 400 });
     }
 
-    const { jobId, title: videoTitle } = await initiate(videoUrl);
+    const cleanedUrl = normalizeVideoUrl(videoUrl);
+    const { jobId, title: videoTitle } = await initiate(cleanedUrl);
     const downloadUrl = await pollDownloadUrl(jobId);
     inputPath = await streamDownloadToFile(downloadUrl, videoTitle);
 
@@ -325,10 +411,8 @@ export async function POST(req: NextRequest) {
           downloadUrl: `/clips/${encodeURIComponent(filename)}`,
         });
       } catch (clipErr) {
-        console.warn(
-          `Clip render skipped (index=${i}, title="${clip.title}")`,
-          clipErr instanceof Error ? clipErr.message : String(clipErr),
-        );
+        console.error(`Clip render skipped (index=${i}, title="${clip.title}")`);
+        logError(clipErr);
       }
     }
 
@@ -342,6 +426,7 @@ export async function POST(req: NextRequest) {
       clips: created,
     });
   } catch (err: unknown) {
+    logError(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to process video' },
       { status: 500 },
@@ -350,8 +435,8 @@ export async function POST(req: NextRequest) {
     if (inputPath && fs.existsSync(inputPath)) {
       try {
         fs.unlinkSync(inputPath);
-      } catch {
-        // ignore cleanup issues
+      } catch (cleanupError) {
+        logError(cleanupError);
       }
     }
   }
