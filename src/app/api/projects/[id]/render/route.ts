@@ -76,7 +76,7 @@ export async function POST(
 
       if (isFfmpeg403Error(message)) {
         try {
-          const refreshed = await getVideoDetails(project.videoId || project.sourceUrl);
+          const refreshed = await getVideoDetails(project.videoId);
           if (refreshed.downloadUrl) {
             updateProject(id, {
               downloadUrl: refreshed.downloadUrl,
@@ -99,8 +99,10 @@ export async function POST(
             saveRenderResult(retriedOutput);
             return;
           }
-        } catch {
-          // Fall through to original error handling
+        } catch (retryErr: unknown) {
+          const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          updateProject(id, { status: 'error', error: `${message}; refresh retry failed: ${retryMessage}` });
+          return;
         }
       }
 
