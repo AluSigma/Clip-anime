@@ -5,17 +5,37 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
-let cachedFfmpegBinary: string | null = null;
+
+function isExecutableBinary(filePath: string): boolean {
+  try {
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile()) {
+      return false;
+    }
+
+    if (process.platform === 'win32') {
+      return true;
+    }
+
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function resolveFfmpegBinary(): string {
-  if (cachedFfmpegBinary) {
-    return cachedFfmpegBinary;
-  }
-
   const configured = process.env.FFMPEG_PATH?.trim();
   if (configured) {
-    cachedFfmpegBinary = configured;
-    return cachedFfmpegBinary;
+    const resolvedConfigured = path.isAbsolute(configured)
+      ? configured
+      : path.resolve(process.cwd(), configured);
+    if (!isExecutableBinary(resolvedConfigured)) {
+      throw new Error(
+        `Invalid FFMPEG_PATH: "${configured}" does not point to an executable ffmpeg binary.`,
+      );
+    }
+    return resolvedConfigured;
   }
 
   const candidates = process.platform === 'win32'
@@ -23,14 +43,12 @@ function resolveFfmpegBinary(): string {
     : ['/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      cachedFfmpegBinary = candidate;
-      return cachedFfmpegBinary;
+    if (isExecutableBinary(candidate)) {
+      return candidate;
     }
   }
 
-  cachedFfmpegBinary = 'ffmpeg';
-  return cachedFfmpegBinary;
+  return 'ffmpeg';
 }
 
 function isReadOnlyTaskPath(targetPath: string): boolean {
