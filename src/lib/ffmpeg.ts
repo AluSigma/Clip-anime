@@ -31,10 +31,13 @@ function resolveFfmpegBinary(): string {
   }
 
   const configured = process.env.FFMPEG_PATH?.trim();
+  const attemptedPaths: string[] = [];
+
   if (configured) {
     const resolvedConfigured = path.isAbsolute(configured)
       ? configured
       : path.resolve(process.cwd(), configured);
+    attemptedPaths.push(resolvedConfigured);
     if (!isExecutableBinary(resolvedConfigured)) {
       throw new Error(
         `Invalid FFMPEG_PATH: "${configured}" does not point to an executable ffmpeg binary.`,
@@ -45,10 +48,20 @@ function resolveFfmpegBinary(): string {
   }
 
   const candidates = process.platform === 'win32'
-    ? ['C:\\ffmpeg\\bin\\ffmpeg.exe', 'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe']
-    : ['/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
+    ? [
+      'C:\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe',
+    ]
+    : [
+      '/usr/local/bin/ffmpeg',
+      '/usr/bin/ffmpeg',
+      '/opt/homebrew/bin/ffmpeg',
+      '/snap/bin/ffmpeg',
+    ];
 
   for (const candidate of candidates) {
+    attemptedPaths.push(candidate);
     if (isExecutableBinary(candidate)) {
       resolvedFfmpegBinary = candidate;
       return resolvedFfmpegBinary;
@@ -59,6 +72,7 @@ function resolveFfmpegBinary(): string {
   for (const entry of pathEntries) {
     const binaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
     const candidate = path.join(entry, binaryName);
+    attemptedPaths.push(candidate);
     if (isExecutableBinary(candidate)) {
       resolvedFfmpegBinary = candidate;
       return resolvedFfmpegBinary;
@@ -66,7 +80,7 @@ function resolveFfmpegBinary(): string {
   }
 
   throw new Error(
-    'FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to an executable ffmpeg binary path.',
+    `FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to an executable ffmpeg binary path. Checked: ${attemptedPaths.join(', ')}`,
   );
 }
 
