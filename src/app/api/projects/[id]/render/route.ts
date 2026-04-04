@@ -3,6 +3,7 @@ import { getProject, updateProject } from '@/lib/db';
 import { renderClip } from '@/lib/ffmpeg';
 import { getVideoDetails } from '@/lib/youtube';
 import { RenderResult } from '@/types/project';
+import { RenderOutput } from '@/lib/ffmpeg';
 
 const MAX_CLIP_DURATION_SECONDS = 300;
 
@@ -45,7 +46,7 @@ export async function POST(
   updateProject(id, { status: 'rendering', error: null });
 
   (async () => {
-    const saveRenderResult = (output: { path: string; url: string; duration: number; subtitle: boolean }) => {
+    const saveRenderResult = (output: RenderOutput) => {
       const renderResult: RenderResult = {
         path: output.path,
         url: output.url,
@@ -80,10 +81,6 @@ export async function POST(
           if (refreshed.downloadUrl) {
             updateProject(id, {
               downloadUrl: refreshed.downloadUrl,
-              title: refreshed.title,
-              duration: refreshed.duration,
-              thumbnail: refreshed.thumbnail,
-              channel: refreshed.channel,
             });
 
             const retriedOutput = await renderClip({
@@ -101,7 +98,7 @@ export async function POST(
           }
           updateProject(id, {
             status: 'error',
-            error: `Original error: ${message}. Retry skipped: failed to obtain refreshed download URL.`,
+            error: `Original error: ${message}. Retry skipped: no valid download URL available after refresh.`,
           });
           return;
         } catch (retryErr: unknown) {
