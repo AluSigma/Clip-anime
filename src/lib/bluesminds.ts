@@ -22,6 +22,15 @@ interface TranscriptChunk {
   text: string;
 }
 
+const AUTO_FALLBACK_CLIPS: HighlightCandidate[] = [
+  {
+    start: 0,
+    end: 30,
+    score: 50,
+    reason: 'Viral Clip (Auto-Fallback)',
+  },
+];
+
 export function buildTranscriptChunks(
   words: Array<{ text: string; start: number; end: number }>,
   chunkDurationMs = 30000
@@ -121,25 +130,11 @@ Ensure each selected segment is 30-90 seconds long. Merge adjacent chunks if nee
     const parsed = JSON.parse(arrayCandidate);
     clipsData = Array.isArray(parsed) ? parsed as HighlightCandidate[] : [];
   } catch {
-    clipsData = [
-      {
-        start: 0,
-        end: 30,
-        score: 50,
-        reason: 'Viral Clip (Auto-Fallback)',
-      },
-    ];
+    clipsData = AUTO_FALLBACK_CLIPS;
   }
 
   if (!Array.isArray(clipsData) || clipsData.length === 0) {
-    clipsData = [
-      {
-        start: 0,
-        end: 30,
-        score: 50,
-        reason: 'Viral Clip (Auto-Fallback)',
-      },
-    ];
+    clipsData = AUTO_FALLBACK_CLIPS;
   }
 
   return clipsData.map((h) => ({
