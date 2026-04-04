@@ -22,6 +22,15 @@ interface TranscriptChunk {
   text: string;
 }
 
+const AUTO_FALLBACK_CLIPS: HighlightCandidate[] = [
+  {
+    start: 0,
+    end: 30,
+    score: 50,
+    reason: 'Viral Clip (Auto-Fallback)',
+  },
+];
+
 export function buildTranscriptChunks(
   words: Array<{ text: string; start: number; end: number }>,
   chunkDurationMs = 30000
@@ -67,16 +76,7 @@ export async function scoreHighlights(
 ): Promise<HighlightCandidate[]> {
   const model = process.env.BLUESMINDS_MODEL || 'gpt-4o-mini';
 
-  const systemPrompt = `You are an expert video editor AI. Analyze transcript segments and identify the most engaging moments for short-form vertical video clips (YouTube Shorts/TikTok style).
-
-Score each segment from 0-100 based on:
-- Hook potential (surprising, curious, controversial)
-- Emotional impact
-- Information density
-- Viral/shareable potential
-- Self-contained narrative
-
-Return ONLY valid JSON array. No markdown, no explanation.`;
+  const systemPrompt = 'You are a machine. Output ONLY a valid, raw JSON array. DO NOT wrap the output in markdown code blocks. NO backticks. NO conversational text.';
 
   const metaTitle = (context?.title || '').trim();
   const metaDescription = (context?.description || '').trim();
@@ -118,12 +118,26 @@ Ensure each selected segment is 30-90 seconds long. Merge adjacent chunks if nee
     timeout: 60000,
   });
 
-  const content = data?.choices?.[0]?.message?.content || '[]';
-  // Parse JSON from response (strip any markdown code blocks if present)
-  const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  const parsed = JSON.parse(jsonStr) as HighlightCandidate[];
+  const content = String(data?.choices?.[0]?.message?.content || '[]');
+  const cleanedResponse = content
+    .replace(/```json\s*/gi, '')
+    .replace(/```/g, '')
+    .trim();
+  const arrayCandidate = cleanedResponse.match(/\[[\s\S]*?\]/)?.[0] || cleanedResponse;
 
-  return parsed.map((h) => ({
+  let clipsData: HighlightCandidate[];
+  try {
+    const parsed = JSON.parse(arrayCandidate);
+    clipsData = Array.isArray(parsed) ? parsed as HighlightCandidate[] : [];
+  } catch {
+    clipsData = AUTO_FALLBACK_CLIPS;
+  }
+
+  if (!Array.isArray(clipsData) || clipsData.length === 0) {
+    clipsData = AUTO_FALLBACK_CLIPS;
+  }
+
+  return clipsData.map((h) => ({
     start: Number(h.start) || 0,
     end: Number(h.end) || 0,
     score: Number(h.score) || 0,

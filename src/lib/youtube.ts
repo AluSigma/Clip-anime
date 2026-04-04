@@ -13,6 +13,7 @@ const QUALITY_SCORE_720 = 300;
 const QUALITY_SCORE_360 = 200;
 const QUALITY_SCORE_MP4 = 100;
 const QUALITY_SCORE_FALLBACK = 10;
+const MAX_PROVIDER_MESSAGE_LENGTH = 180;
 
 function getRapidApiKey(): string {
   const key = (process.env.RAPIDAPI_KEY || '').trim();
@@ -209,6 +210,42 @@ function wait(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+function toSafeProviderMessage(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const normalized = input.replace(/\s+/g, ' ').trim();
+  if (!normalized) return null;
+  if (normalized.length > MAX_PROVIDER_MESSAGE_LENGTH) return null;
+  if (!/^[a-zA-Z0-9 .,!?():'"&%/-]+$/.test(normalized)) return null;
+  return normalized;
+}
+
+function mapYoutubeApiError(err: unknown): Error {
+  if (!axios.isAxiosError(err)) {
+    return err instanceof Error ? err : new Error('Failed to fetch YouTube video details');
+  }
+
+  const status = err.response?.status;
+  if (status === 400) {
+    return new Error('Failed to fetch video details. Please verify the YouTube URL is valid and well-formed.');
+  }
+  if (status === 401 || status === 403) {
+    return new Error('Failed to fetch video details due to provider authorization.');
+  }
+  if (status === 404) {
+    return new Error('Video details were not found by provider. Please verify the YouTube link.');
+  }
+
+  const providerPayload = asRecord(err.response?.data);
+  const safeProviderMessage = toSafeProviderMessage(
+    providerPayload ? getFirstString(providerPayload, ['message', 'error', 'detail']) : null,
+  );
+  if (safeProviderMessage) {
+    return new Error(safeProviderMessage);
+  }
+
+  return new Error(err.message || 'Failed to fetch YouTube video details');
+}
+
 async function initiateDownloadTask(videoUrl: string): Promise<{ progressUrl: string | null; downloadUrl: string | null }> {
   for (const quality of ['720', '360']) {
     const { data } = await axios.get(`${BASE}/ajax/download.php`, {
@@ -334,57 +371,61 @@ async function cacheVideoStream(videoId: string, downloadUrl: string): Promise<{
 }
 
 export async function getVideoDetails(urlOrId: string): Promise<VideoDetails> {
-  const videoId = extractVideoId(urlOrId);
-  const videoUrl = normalizeYoutubeUrl(urlOrId);
-
-  const { data: rawData } = await axios.get(`${BASE}/ajax/api.php`, {
-    params: {
-      function: 'i',
-      u: videoUrl,
-    },
-    headers: headers(),
-    timeout: 30000,
-  });
-  const data = (asRecord(rawData) || {}) as Record<string, unknown>;
-
-  const title = getFirstString(data, ['title', 'video_title', 'name']) || 'Untitled';
-  const description = getFirstString(data, ['description', 'desc', 'video_description']);
-  const duration = parseDurationSeconds(data.duration ?? data.length ?? data.lengthSeconds);
-  const thumbnail = normalizeUrl(
-    getFirstString(data, ['thumbnail', 'thumb', 'image']) || getNestedString(data, ['thumbnail', 'thumb', 'image']),
-  );
-  const channel = getFirstString(data, ['channel', 'author', 'uploader']) || getNestedString(data, ['channel', 'author', 'uploader']);
-
-  const task = await initiateDownloadTask(videoUrl);
-  const resolvedDownloadUrl = normalizeUrl(task.downloadUrl || (task.progressUrl ? await pollDownloadUrl(task.progressUrl) : null));
-  if (!resolvedDownloadUrl) {
-    throw new Error('Failed to resolve MP4 download URL from youtube-info-download-api');
-  }
-
-  let localVideoPath: string | null = null;
-  let localVideoUrl: string | null = null;
   try {
-    const cached = await cacheVideoStream(videoId, resolvedDownloadUrl);
-    localVideoPath = cached.localVideoPath;
-    localVideoUrl = cached.localVideoUrl;
-  } catch (cacheError: unknown) {
-    console.warn(
-      '[youtube] Source caching failed, falling back to direct download URL:',
-      cacheError instanceof Error ? cacheError.message : String(cacheError),
-    );
-    localVideoPath = null;
-    localVideoUrl = null;
-  }
+    const videoId = extractVideoId(urlOrId);
+    const videoUrl = normalizeYoutubeUrl(urlOrId);
 
-  return {
-    id: videoId,
-    title,
-    description,
-    duration,
-    thumbnail,
-    channel,
-    downloadUrl: resolvedDownloadUrl,
-    localVideoPath,
-    localVideoUrl,
-  };
+    const { data: rawData } = await axios.get(`${BASE}/ajax/api.php`, {
+      params: {
+        function: 'i',
+        u: videoUrl,
+      },
+      headers: headers(),
+      timeout: 30000,
+    });
+    const data = (asRecord(rawData) || {}) as Record<string, unknown>;
+
+    const title = getFirstString(data, ['title', 'video_title', 'name']) || 'Untitled';
+    const description = getFirstString(data, ['description', 'desc', 'video_description']);
+    const duration = parseDurationSeconds(data.duration ?? data.length ?? data.lengthSeconds);
+    const thumbnail = normalizeUrl(
+      getFirstString(data, ['thumbnail', 'thumb', 'image']) || getNestedString(data, ['thumbnail', 'thumb', 'image']),
+    );
+    const channel = getFirstString(data, ['channel', 'author', 'uploader']) || getNestedString(data, ['channel', 'author', 'uploader']);
+
+    const task = await initiateDownloadTask(videoUrl);
+    const resolvedDownloadUrl = normalizeUrl(task.downloadUrl || (task.progressUrl ? await pollDownloadUrl(task.progressUrl) : null));
+    if (!resolvedDownloadUrl) {
+      throw new Error('Failed to resolve MP4 download URL from youtube-info-download-api');
+    }
+
+    let localVideoPath: string | null = null;
+    let localVideoUrl: string | null = null;
+    try {
+      const cached = await cacheVideoStream(videoId, resolvedDownloadUrl);
+      localVideoPath = cached.localVideoPath;
+      localVideoUrl = cached.localVideoUrl;
+    } catch (cacheError: unknown) {
+      console.warn(
+        '[youtube] Source caching failed, falling back to direct download URL:',
+        cacheError instanceof Error ? cacheError.message : String(cacheError),
+      );
+      localVideoPath = null;
+      localVideoUrl = null;
+    }
+
+    return {
+      id: videoId,
+      title,
+      description,
+      duration,
+      thumbnail,
+      channel,
+      downloadUrl: resolvedDownloadUrl,
+      localVideoPath,
+      localVideoUrl,
+    };
+  } catch (err: unknown) {
+    throw mapYoutubeApiError(err);
+  }
 }
