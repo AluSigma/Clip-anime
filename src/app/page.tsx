@@ -1,715 +1,169 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Project, HighlightCandidate } from '@/types/project';
+import { useEffect, useMemo, useState } from 'react';
 
-const ACTIVE_STATUSES = ['fetching', 'transcribing', 'scoring', 'rendering'];
-const CUSTOM_CLIP_INDEX = 99;
-
-const STATUS_LABELS: Record<string, string> = {
-  created: 'Created',
-  fetching: 'Fetching video info...',
-  fetched: 'Video info fetched',
-  transcribing: 'Transcribing audio...',
-  transcribed: 'Transcript ready',
-  scoring: 'Scoring highlights...',
-  scored: 'Highlights scored',
-  rendering: 'Rendering clip...',
-  done: 'Done ✓',
-  error: 'Error',
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  created: 'bg-gray-100 text-gray-700',
-  fetching: 'bg-blue-100 text-blue-700',
-  fetched: 'bg-blue-100 text-blue-700',
-  transcribing: 'bg-yellow-100 text-yellow-700',
-  transcribed: 'bg-yellow-100 text-yellow-700',
-  scoring: 'bg-purple-100 text-purple-700',
-  scored: 'bg-purple-100 text-purple-700',
-  rendering: 'bg-orange-100 text-orange-700',
-  done: 'bg-green-100 text-green-700',
-  error: 'bg-red-100 text-red-700',
-};
-
-function formatTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${m}:${String(s).padStart(2, '0')}`;
+interface GeneratedClip {
+  title: string;
+  start_time: string;
+  end_time: string;
+  downloadUrl: string;
 }
 
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s > 0 ? `${m}m ${s}s` : `${m}m`;
-}
-
-function formatRelativeTime(value: string): string {
-  const time = new Date(value).getTime();
-  if (Number.isNaN(time)) return '-';
-  const diffSec = Math.floor((Date.now() - time) / 1000);
-  if (diffSec < 60) return 'just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}h ago`;
-  const diffDay = Math.floor(diffHour / 24);
-  return `${diffDay}d ago`;
-}
-
-function isValidYouTubeUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
-    return (
-      host === 'youtube.com' ||
-      host === 'www.youtube.com' ||
-      host === 'm.youtube.com' ||
-      host === 'music.youtube.com' ||
-      host === 'youtu.be' ||
-      host === 'www.youtu.be'
-    );
-  } catch {
-    return false;
-  }
-}
-
-function StepIndicator({ project }: { project: Project }) {
-  const steps = [
-    { key: ['fetching', 'fetched'], label: '1. Fetch', icon: '🔍' },
-    { key: ['transcribing', 'transcribed'], label: '2. Transcribe', icon: '📝' },
-    { key: ['scoring', 'scored'], label: '3. Highlights', icon: '⭐' },
-    { key: ['rendering', 'done'], label: '4. Render', icon: '🎬' },
-  ];
-
-  const statusOrder = ['created', 'fetching', 'fetched', 'transcribing', 'transcribed', 'scoring', 'scored', 'rendering', 'done'];
-  const currentIndex = statusOrder.indexOf(project.status);
-
-  return (
-    <div className="flex items-center gap-1 flex-wrap">
-      {steps.map((step, i) => {
-        const stepStatuses = step.key;
-        const stepMinIndex = Math.min(...stepStatuses.map(s => statusOrder.indexOf(s)));
-        const stepMaxIndex = Math.max(...stepStatuses.map(s => statusOrder.indexOf(s)));
-        
-        let state: 'done' | 'active' | 'pending' = 'pending';
-        if (currentIndex > stepMaxIndex) state = 'done';
-        else if (currentIndex >= stepMinIndex) state = 'active';
-
-        return (
-          <div key={i} className="flex items-center gap-1">
-            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-              state === 'done' ? 'bg-green-100 text-green-700' :
-              state === 'active' ? 'bg-blue-100 text-blue-700 animate-pulse' :
-              'bg-gray-100 text-gray-400'
-            }`}>
-              {step.icon} {step.label}
-            </div>
-            {i < steps.length - 1 && (
-              <span className="text-gray-300">→</span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function HighlightCard({
-  highlight,
-  index,
-  onRender,
-  isRendering,
-}: {
-  highlight: HighlightCandidate;
-  index: number;
-  onRender: (start: number, end: number, burnSubtitles: boolean, clipIndex: number) => void;
-  isRendering: boolean;
-}) {
-  const [burnSubs, setBurnSubs] = useState(false);
-  const duration = highlight.end - highlight.start;
-
-  return (
-    <div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div>
-          <span className="font-medium text-gray-900">Clip #{index + 1}</span>
-          <span className="ml-2 text-sm text-gray-500">
-            {formatTime(highlight.start)} → {formatTime(highlight.end)}
-          </span>
-          <span className="ml-2 text-xs text-gray-400">({formatDuration(duration)})</span>
-        </div>
-        <div className={`px-2 py-1 rounded text-sm font-bold ${
-          highlight.score >= 80 ? 'bg-green-100 text-green-700' :
-          highlight.score >= 60 ? 'bg-yellow-100 text-yellow-700' :
-          'bg-gray-100 text-gray-600'
-        }`}>
-          {highlight.score}/100
-        </div>
-      </div>
-      <p className="text-sm text-gray-600 mb-3 line-clamp-2">{highlight.reason}</p>
-      <div className="flex items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={burnSubs}
-            onChange={(e) => setBurnSubs(e.target.checked)}
-            className="w-4 h-4 text-blue-600 rounded"
-          />
-          Burn subtitles
-        </label>
-        <button
-          onClick={() => onRender(highlight.start, highlight.end, burnSubs, index)}
-          disabled={isRendering}
-          className="ml-auto px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {isRendering ? '⏳ Rendering...' : '🎬 Render Clip'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ProjectView({ projectId, onBack }: { projectId: string; onBack: () => void }) {
-  const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const fetchProject = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}`);
-      const data = await res.json();
-      if (data.project) setProject(data.project);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
-
-  const projectStatus = project?.status;
-  useEffect(() => {
-    fetchProject();
-    const isActive = ACTIVE_STATUSES.includes(projectStatus || '');
-    if (isActive || !projectStatus) {
-      const interval = setInterval(fetchProject, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [fetchProject, projectStatus]);
-
-  const doAction = async (action: string, body?: Record<string, unknown>) => {
-    setActionLoading(action);
-    setActionError(null);
-    try {
-      const res = await fetch(`/api/projects/${projectId}/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Action failed');
-      await fetchProject();
-    } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Failed');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
-
-  if (!project) {
-    return (
-      <div className="text-center py-20">
-        <p className="text-gray-500">Project not found</p>
-        <button onClick={onBack} className="mt-4 text-blue-600 hover:underline">← Back</button>
-      </div>
-    );
-  }
-
-  const isProcessing = ACTIVE_STATUSES.includes(project.status);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <button onClick={onBack} className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1">
-          ← Back
-        </button>
-        <h2 className="text-xl font-bold text-gray-900 truncate flex-1">
-          {project.title || 'Loading...'}
-        </h2>
-        {isProcessing && (
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 flex-shrink-0" />
-        )}
-      </div>
-
-      {/* Video Info */}
-      {project.thumbnail && (
-        <div className="flex gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={project.thumbnail}
-            alt={project.title}
-            className="w-32 h-20 object-cover rounded-lg flex-shrink-0"
-          />
-          <div>
-            <p className="font-medium text-gray-900">{project.title}</p>
-            {project.channel && <p className="text-sm text-gray-500">{project.channel}</p>}
-            {project.duration > 0 && (
-              <p className="text-sm text-gray-500">Duration: {formatTime(project.duration)}</p>
-            )}
-            <a
-              href={project.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-blue-600 hover:underline mt-1 inline-block"
-            >
-              View on YouTube ↗
-            </a>
-          </div>
-        </div>
-      )}
-
-      {/* Status */}
-      <div className="space-y-2">
-        <StepIndicator project={project} />
-        <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${STATUS_COLOR[project.status]}`}>
-          {STATUS_LABELS[project.status] || project.status}
-        </div>
-        {project.error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-            ⚠️ {project.error}
-          </div>
-        )}
-      </div>
-
-      {/* Action Buttons */}
-      {actionError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-          ⚠️ {actionError}
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-3">
-        {/* Transcribe button */}
-        {(project.status === 'fetched' || project.status === 'error') && project.downloadUrl && (
-          <button
-            onClick={() => doAction('transcribe')}
-            disabled={!!actionLoading}
-            className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 transition-colors"
-          >
-            {actionLoading === 'transcribe' ? '⏳ Starting...' : '📝 Transcribe Audio'}
-          </button>
-        )}
-
-        {/* Score highlights button */}
-        {(project.status === 'transcribed' || (project.status === 'error' && project.transcriptText)) && (
-          <button
-            onClick={() => doAction('highlights')}
-            disabled={!!actionLoading}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
-          >
-            {actionLoading === 'highlights' ? '⏳ Starting...' : '⭐ Score Highlights'}
-          </button>
-        )}
-
-        {/* Refresh button when processing */}
-        {isProcessing && (
-          <button
-            onClick={fetchProject}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            🔄 Refresh Status
-          </button>
-        )}
-      </div>
-
-      {/* Transcript Preview */}
-      {project.transcriptText && (
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-2">📝 Transcript</h3>
-          <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 max-h-40 overflow-y-auto">
-            <p className="text-sm text-gray-700 leading-relaxed">{project.transcriptText}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Highlight Candidates */}
-      {project.highlightCandidates && project.highlightCandidates.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">⭐ Highlight Candidates</h3>
-          <div className="space-y-3">
-            {project.highlightCandidates
-              .sort((a, b) => b.score - a.score)
-              .map((h, i) => (
-                <HighlightCard
-                  key={i}
-                  highlight={h}
-                  index={i}
-                  onRender={(start, end, burnSubs, clipIdx) =>
-                    doAction('render', { start, end, burnSubtitles: burnSubs, clipIndex: clipIdx })
-                  }
-                  isRendering={actionLoading === 'render' || project.status === 'rendering'}
-                />
-              ))}
-          </div>
-        </div>
-      )}
-
-      {/* Custom Render */}
-      {project.downloadUrl && (
-        <CustomRenderPanel
-          project={project}
-          onRender={(start, end, burnSubs) =>
-            doAction('render', { start, end, burnSubtitles: burnSubs, clipIndex: CUSTOM_CLIP_INDEX })
-          }
-          isRendering={actionLoading === 'render' || project.status === 'rendering'}
-        />
-      )}
-
-      {/* Renders */}
-      {project.renders && project.renders.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">🎬 Rendered Clips</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {project.renders.map((render, i) => (
-              <div key={i} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                <video
-                  src={render.url}
-                  controls
-                  className="w-full aspect-[9/16] bg-black"
-                  playsInline
-                />
-                <div className="p-3">
-                  <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-                    <span>📐 {render.format}</span>
-                    <span>⏱ {formatDuration(Math.round(render.duration))}</span>
-                    {render.subtitle && <span>💬 Subtitles</span>}
-                  </div>
-                  <a
-                    href={render.url}
-                    download={`clip_${i + 1}.mp4`}
-                    className="block w-full text-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
-                  >
-                    ⬇️ Download Clip {i + 1}
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CustomRenderPanel({
-  project,
-  onRender,
-  isRendering,
-}: {
-  project: Project;
-  onRender: (start: number, end: number, burnSubtitles: boolean) => void;
-  isRendering: boolean;
-}) {
-  const [start, setStart] = useState(0);
-  const [end, setEnd] = useState(Math.min(60, project.duration));
-  const [burnSubs, setBurnSubs] = useState(false);
-  const [preset, setPreset] = useState<30 | 60 | 90>(60);
-
-  const applyPreset = (duration: 30 | 60 | 90) => {
-    setPreset(duration);
-    setEnd(Math.min(start + duration, project.duration));
-  };
-
-  if (!['fetched', 'transcribed', 'scored', 'done', 'error'].includes(project.status)) {
-    return null;
-  }
-
-  return (
-    <div className="border border-gray-200 rounded-xl p-4 bg-white">
-      <h3 className="text-lg font-semibold text-gray-800 mb-3">✂️ Custom Clip</h3>
-      <div className="space-y-4">
-        <div className="flex gap-2">
-          {([30, 60, 90] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => applyPreset(d)}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                preset === d ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {d}s
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="text-sm text-gray-600">Start (sec)</span>
-            <input
-              type="number"
-              min={0}
-              max={project.duration}
-              value={start}
-              onChange={(e) => setStart(Number(e.target.value))}
-              className="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm text-gray-600">End (sec)</span>
-            <input
-              type="number"
-              min={start + 1}
-              max={project.duration}
-              value={end}
-              onChange={(e) => setEnd(Number(e.target.value))}
-              className="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </label>
-        </div>
-        <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={burnSubs}
-              onChange={(e) => setBurnSubs(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded"
-            />
-            Burn subtitles {!project.srt && '(requires transcript)'}
-          </label>
-          <button
-            onClick={() => onRender(start, end, burnSubs && !!project.srt)}
-            disabled={isRendering || end <= start}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {isRendering ? '⏳ Rendering...' : '🎬 Render Custom Clip'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+const LOADING_MESSAGES = [
+  'Menembus Pertahanan YouTube...',
+  'Menyusun Data Video...',
+  'AI Sedang Menganalisa...',
+  'Memotong Video...',
+  'Menyempurnakan Hasil Sultan...',
+];
 
 export default function Home() {
   const [url, setUrl] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [loadingProjects, setLoadingProjects] = useState(true);
-  const { trimmedUrl, isValidUrl } = useMemo(() => {
-    const nextTrimmedUrl = url.trim();
-    return {
-      trimmedUrl: nextTrimmedUrl,
-      isValidUrl: nextTrimmedUrl.length > 0 && isValidYouTubeUrl(nextTrimmedUrl),
-    };
-  }, [url]);
-  const sortedProjects = useMemo(
-    () => [...projects].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [projects]
-  );
-  const activeProjectCount = useMemo(
-    () => projects.filter((p) => ACTIVE_STATUSES.includes(p.status)).length,
-    [projects]
-  );
-  const inlineUrlError = trimmedUrl && !isValidUrl ? 'Please enter a valid YouTube URL.' : null;
-  const urlDescribedBy = [
-    'youtube-url-help',
-    inlineUrlError ? 'youtube-url-error' : '',
-    createError ? 'youtube-url-submit-error' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  const fetchProjects = useCallback(async () => {
-    try {
-      const res = await fetch('/api/projects');
-      const data = await res.json();
-      if (data.projects) setProjects(data.projects);
-    } catch {
-      // ignore
-    } finally {
-      setLoadingProjects(false);
-    }
-  }, []);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [clips, setClips] = useState<GeneratedClip[]>([]);
+  const [videoTitle, setVideoTitle] = useState('');
+  const [loadingIndex, setLoadingIndex] = useState(0);
 
   useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
+    if (!loading) return;
+    const timer = setInterval(() => {
+      setLoadingIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+    }, 1800);
+    return () => clearInterval(timer);
+  }, [loading]);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!trimmedUrl) return;
-    if (!isValidYouTubeUrl(trimmedUrl)) {
-      setCreateError('Please enter a valid YouTube URL');
-      return;
-    }
-
-    setCreating(true);
-    setCreateError(null);
+  const isValidYouTubeUrl = useMemo(() => {
+    const value = url.trim();
+    if (!value) return false;
 
     try {
-      const res = await fetch('/api/projects', {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+      return host.includes('youtube.com') || host.includes('youtu.be');
+    } catch {
+      return false;
+    }
+  }, [url]);
+
+  const onGenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValidYouTubeUrl || loading) return;
+
+    setLoading(true);
+    setError(null);
+    setClips([]);
+    setVideoTitle('');
+    setLoadingIndex(0);
+
+    try {
+      const res = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmedUrl }),
+        body: JSON.stringify({ url: url.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create project');
 
-      setUrl('');
-      setSelectedProjectId(data.project.id);
-      await fetchProjects();
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Gagal memproses video.');
+      }
+
+      setVideoTitle(String(data?.videoTitle || 'Hasil Sultan Clipper'));
+      setClips(Array.isArray(data?.clips) ? data.clips : []);
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create project');
+      setError(err instanceof Error ? err.message : 'Terjadi kesalahan saat memproses video.');
     } finally {
-      setCreating(false);
+      setLoading(false);
     }
   };
 
-  if (selectedProjectId) {
-    return (
-      <main className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-        <div className="max-w-2xl mx-auto px-4 py-8">
-          <ProjectView
-            projectId={selectedProjectId}
-            onBack={() => {
-              setSelectedProjectId(null);
-              fetchProjects();
-            }}
-          />
-        </div>
-      </main>
-    );
-  }
-
   return (
-    <main className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="text-center mb-10">
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">
-                🎬 ClipAnime
-              </h1>
-              <p className="text-gray-500 text-lg">
-                Auto-generate short clips from any YouTube video
-              </p>
-              <p className="text-sm text-gray-400 mt-2">
-                {activeProjectCount > 0
-                  ? `${activeProjectCount} project(s) currently processing`
-                  : 'Ready to process a new video'}
-              </p>
-            </div>
-
-        {/* URL Input */}
-        <form onSubmit={handleCreate} className="mb-8">
-          <label htmlFor="youtube-url" className="block text-sm text-gray-600 mb-2">
-            YouTube URL <span className="text-red-500">*</span>
-            <span className="sr-only">(required)</span>
-          </label>
-          <div className="flex gap-3">
-            <input
-              id="youtube-url"
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://youtube.com/watch?v=..."
-              className={`flex-1 border rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 bg-white shadow-sm ${
-                trimmedUrl && !isValidUrl
-                  ? 'border-red-300 focus:ring-red-500'
-                  : 'border-gray-300 focus:ring-blue-500'
-              }`}
-              aria-invalid={!!inlineUrlError}
-              aria-describedby={urlDescribedBy}
-              required
-            />
-            <button
-              type="submit"
-              disabled={creating || !isValidUrl}
-              className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-            >
-              {creating ? '⏳ Creating...' : '🚀 Start'}
-            </button>
+    <main className="min-h-screen bg-[#06070b] bg-[radial-gradient(circle_at_10%_10%,rgba(147,51,234,0.25),transparent_35%),radial-gradient(circle_at_90%_20%,rgba(234,179,8,0.18),transparent_35%),linear-gradient(to_bottom_right,#090a12,#030409)] text-zinc-100">
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
+        <section className="rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-xl ring-1 ring-purple-400/20 lg:p-12">
+          <div className="text-center">
+            <p className="mb-3 inline-flex rounded-full border border-yellow-400/40 bg-yellow-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-yellow-300">
+              AI Auto Shorts Generator
+            </p>
+            <h1 className="text-4xl font-extrabold leading-tight sm:text-6xl">
+              <span className="bg-gradient-to-r from-yellow-300 via-amber-200 to-purple-300 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(250,204,21,0.35)]">
+                Sultan Clipper
+              </span>
+            </h1>
+            <p className="mx-auto mt-4 max-w-2xl text-sm text-zinc-300 sm:text-base">
+              Ubah video YouTube jadi klip vertikal premium dalam hitungan menit dengan kekuatan AI.
+            </p>
           </div>
-          <p id="youtube-url-help" className="mt-2 text-xs text-gray-500">
-            Supports youtube.com and youtu.be links.
-          </p>
-          {inlineUrlError && (
-            <p id="youtube-url-error" className="mt-1 text-sm text-red-600">{inlineUrlError}</p>
-          )}
-          {createError && (
-            <p id="youtube-url-submit-error" className="mt-2 text-sm text-red-600">⚠️ {createError}</p>
-          )}
-        </form>
 
-        {/* Projects List */}
-        <div>
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">
-              Recent Projects ({projects.length})
-            </h2>
+          <form onSubmit={onGenerate} className="mx-auto mt-8 max-w-3xl">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+                className="h-14 flex-1 rounded-2xl border border-white/15 bg-black/30 px-5 text-base text-white placeholder:text-zinc-500 outline-none transition focus:border-purple-400/70 focus:ring-2 focus:ring-purple-400/40"
+                required
+              />
+              <button
+                type="submit"
+                disabled={!isValidYouTubeUrl || loading}
+                className="h-14 rounded-2xl bg-gradient-to-r from-yellow-400 via-amber-300 to-purple-400 px-7 font-bold text-zinc-900 shadow-xl transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? 'Memproses...' : 'Generate Clips'}
+              </button>
+            </div>
+            {!isValidYouTubeUrl && url.trim() && (
+              <p className="mt-2 text-sm text-red-300">URL YouTube tidak valid.</p>
+            )}
+          </form>
 
-          {loadingProjects ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          {loading && (
+            <div className="mt-8 rounded-2xl border border-white/10 bg-black/30 p-6 text-center">
+              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-purple-300/30 border-t-yellow-300" />
+              <p className="mt-4 text-sm font-medium text-zinc-200">{LOADING_MESSAGES[loadingIndex]}</p>
             </div>
-          ) : projects.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <p className="text-5xl mb-3">🎥</p>
-              <p>No projects yet. Paste a YouTube URL to get started!</p>
+          )}
+
+          {error && (
+            <div className="mt-6 rounded-2xl border border-red-500/50 bg-red-500/10 p-4 text-sm text-red-200 shadow-lg shadow-red-900/20">
+              ⚠️ {error}
             </div>
-          ) : (
-              <div className="space-y-3">
-               {sortedProjects.map((p) => (
-                 <button
-                   key={p.id}
-                   onClick={() => setSelectedProjectId(p.id)}
-                  className="w-full flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-blue-200 transition-all text-left"
+          )}
+        </section>
+
+        {clips.length > 0 && (
+          <section className="mt-10">
+            <div className="mb-5">
+              <h2 className="text-2xl font-bold text-white">Result Gallery</h2>
+              <p className="mt-1 text-sm text-zinc-400">{videoTitle}</p>
+            </div>
+
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {clips.map((clip, index) => (
+                <article
+                  key={`${clip.downloadUrl}-${index}`}
+                  className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-xl ring-1 ring-white/5 backdrop-blur"
                 >
-                  {p.thumbnail ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={p.thumbnail}
-                      alt={p.title}
-                      className="w-16 h-10 object-cover rounded flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-10 bg-gray-200 rounded flex-shrink-0 flex items-center justify-center text-gray-400 text-xl">
-                      🎬
-                    </div>
-                  )}
-                   <div className="flex-1 min-w-0">
-                     <p className="font-medium text-gray-900 truncate">
-                       {p.title || p.videoId || 'Loading...'}
-                     </p>
-                     <p className="text-sm text-gray-500 truncate">{p.sourceUrl}</p>
-                     <p className="text-xs text-gray-400 mt-0.5">
-                       Updated {formatRelativeTime(p.updatedAt)}
-                       {p.duration > 0 ? ` • ${formatTime(p.duration)}` : ''}
-                     </p>
-                   </div>
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[p.status]}`}>
-                      {STATUS_LABELS[p.status] || p.status}
-                    </span>
-                    {p.renders.length > 0 && (
-                      <span className="text-xs text-gray-400">{p.renders.length} clip(s)</span>
-                    )}
+                  <video controls src={clip.downloadUrl} className="aspect-[9/16] w-full bg-black" />
+                  <div className="space-y-2 p-4">
+                    <h3 className="line-clamp-2 font-semibold text-zinc-100">{clip.title}</h3>
+                    <p className="text-xs text-zinc-400">
+                      {clip.start_time} - {clip.end_time}
+                    </p>
+                    <a
+                      href={clip.downloadUrl}
+                      download
+                      className="inline-flex rounded-lg border border-yellow-300/40 bg-yellow-300/10 px-3 py-1.5 text-xs font-medium text-yellow-200 transition hover:bg-yellow-300/20"
+                    >
+                      Download Clip
+                    </a>
                   </div>
-                </button>
+                </article>
               ))}
             </div>
-          )}
-        </div>
+          </section>
+        )}
       </div>
     </main>
   );
