@@ -215,7 +215,7 @@ function toSafeProviderMessage(input: unknown): string | null {
   const normalized = input.replace(/\s+/g, ' ').trim();
   if (!normalized) return null;
   if (normalized.length > MAX_PROVIDER_MESSAGE_LENGTH) return null;
-  if (!/^[a-zA-Z0-9 .,!?():-]+$/.test(normalized)) return null;
+  if (!/^[a-zA-Z0-9 .,!?():'"&%/-]+$/.test(normalized)) return null;
   return normalized;
 }
 
@@ -226,7 +226,7 @@ function mapYoutubeApiError(err: unknown): Error {
 
   const status = err.response?.status;
   if (status === 400) {
-    return new Error('Failed to fetch video details. Please verify the YouTube URL and try another publicly accessible video.');
+    return new Error('Failed to fetch video details. Please verify the YouTube URL is valid and well-formed.');
   }
   if (status === 401 || status === 403) {
     return new Error('Failed to fetch video details due to provider authorization.');
