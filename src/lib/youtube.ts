@@ -13,6 +13,7 @@ const QUALITY_SCORE_720 = 300;
 const QUALITY_SCORE_360 = 200;
 const QUALITY_SCORE_MP4 = 100;
 const QUALITY_SCORE_FALLBACK = 10;
+const MAX_PROVIDER_MESSAGE_LENGTH = 180;
 
 function getRapidApiKey(): string {
   const key = (process.env.RAPIDAPI_KEY || '').trim();
@@ -213,7 +214,7 @@ function toSafeProviderMessage(input: unknown): string | null {
   if (typeof input !== 'string') return null;
   const normalized = input.replace(/\s+/g, ' ').trim();
   if (!normalized) return null;
-  if (normalized.length > 180) return null;
+  if (normalized.length > MAX_PROVIDER_MESSAGE_LENGTH) return null;
   if (!/^[a-zA-Z0-9 .,!?():-]+$/.test(normalized)) return null;
   return normalized;
 }
@@ -225,7 +226,7 @@ function mapYoutubeApiError(err: unknown): Error {
 
   const status = err.response?.status;
   if (status === 400) {
-    return new Error('Failed to fetch video details. Please ensure the URL format is valid and the video is publicly accessible (not private, deleted, or age-restricted).');
+    return new Error('Failed to fetch video details. Please verify the YouTube URL and try another publicly accessible video.');
   }
   if (status === 401 || status === 403) {
     return new Error('Failed to fetch video details due to provider authorization.');
