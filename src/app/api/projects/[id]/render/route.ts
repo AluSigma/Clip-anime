@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProject, updateProject } from '@/lib/db';
 import { renderClip } from '@/lib/ffmpeg';
+import { getVideoDetails } from '@/lib/youtube';
 import { RenderResult } from '@/types/project';
+import { RenderOutput } from '@/lib/ffmpeg';
 
 const MAX_CLIP_DURATION_SECONDS = 300;
+
+function isFfmpeg403Error(message: string): boolean {
+  return /403 Forbidden/i.test(message) || /HTTP error 403/i.test(message);
+}
 
 interface RenderRequest {
   start: number;
@@ -40,17 +46,16 @@ export async function POST(
   updateProject(id, { status: 'rendering', error: null });
 
   (async () => {
-    try {
-      const output = await renderClip({
-        projectId: id,
-        videoUrl: project.downloadUrl as string,
-        start,
-        end,
-        srt: project.srt || undefined,
-        burnSubtitles,
-        clipIndex,
-      });
+    const baseRenderOptions = {
+      projectId: id,
+      start,
+      end,
+      srt: project.srt || undefined,
+      burnSubtitles,
+      clipIndex,
+    };
 
+    const saveRenderResult = (output: RenderOutput) => {
       const renderResult: RenderResult = {
         path: output.path,
         url: output.url,
@@ -63,8 +68,58 @@ export async function POST(
       const currentProject = getProject(id);
       const renders = [...(currentProject?.renders || []), renderResult];
       updateProject(id, { renders, status: 'done' });
+    };
+
+    try {
+      const output = await renderClip({
+        ...baseRenderOptions,
+        videoUrl: project.downloadUrl as string,
+      });
+      saveRenderResult(output);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Render failed';
+
+      if (isFfmpeg403Error(message)) {
+        try {
+          if (!project.videoId) {
+            throw new Error('Cannot refresh download URL because project videoId is missing');
+          }
+          const refreshed = await getVideoDetails(project.videoId);
+          const untrimmedDownloadUrl = refreshed.downloadUrl;
+          const refreshedDownloadUrl = untrimmedDownloadUrl?.trim() ?? null;
+
+          if (refreshedDownloadUrl) {
+            updateProject(id, {
+              downloadUrl: refreshedDownloadUrl,
+            });
+
+            const retriedOutput = await renderClip({
+              ...baseRenderOptions,
+              videoUrl: refreshedDownloadUrl,
+            });
+
+            saveRenderResult(retriedOutput);
+            return;
+          }
+          const downloadUrlIssueType =
+            typeof untrimmedDownloadUrl === 'string' && untrimmedDownloadUrl.trim().length === 0
+              ? 'empty string'
+              : 'missing (null/undefined)';
+          updateProject(id, {
+            status: 'error',
+            error: `Original error: ${message}. Retry skipped: refresh succeeded but returned a downloadUrl that was ${downloadUrlIssueType}.`,
+          });
+          return;
+        } catch (retryErr: unknown) {
+          const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          updateProject(id, {
+            status: 'error',
+            error: `Original error: ${message}. Retry attempt failed: ${retryMessage}`,
+          });
+          return;
+        }
+      }
+
       updateProject(id, { status: 'error', error: message });
     }
   })();
