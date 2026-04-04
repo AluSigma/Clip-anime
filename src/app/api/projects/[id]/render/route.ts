@@ -85,22 +85,29 @@ export async function POST(
             throw new Error('Cannot refresh download URL because project videoId is missing');
           }
           const refreshed = await getVideoDetails(project.videoId);
-          if (refreshed.downloadUrl) {
+          const untrimmedDownloadUrl = refreshed.downloadUrl;
+          const refreshedDownloadUrl = untrimmedDownloadUrl?.trim() ?? null;
+
+          if (refreshedDownloadUrl) {
             updateProject(id, {
-              downloadUrl: refreshed.downloadUrl,
+              downloadUrl: refreshedDownloadUrl,
             });
 
             const retriedOutput = await renderClip({
               ...baseRenderOptions,
-              videoUrl: refreshed.downloadUrl,
+              videoUrl: refreshedDownloadUrl,
             });
 
             saveRenderResult(retriedOutput);
             return;
           }
+          const downloadUrlIssueType =
+            typeof untrimmedDownloadUrl === 'string' && untrimmedDownloadUrl.trim().length === 0
+              ? 'empty string'
+              : 'missing (null/undefined)';
           updateProject(id, {
             status: 'error',
-            error: `Original error: ${message}. Retry skipped: refresh succeeded but returned a missing/empty downloadUrl.`,
+            error: `Original error: ${message}. Retry skipped: refresh succeeded but returned a downloadUrl that was ${downloadUrlIssueType}.`,
           });
           return;
         } catch (retryErr: unknown) {
