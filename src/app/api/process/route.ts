@@ -331,11 +331,11 @@ export async function POST(req: NextRequest) {
   let inputPath = '';
 
   try {
-    const body = (await req.json()) as { url?: string };
-    const videoUrl = body?.url?.trim();
+    const body = (await req.json()) as { videoUrl?: string; url?: string };
+    const videoUrl = body?.videoUrl?.trim() || body?.url?.trim() || '';
 
     if (!videoUrl) {
-      return NextResponse.json({ error: 'url is required' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'URL is required' }, { status: 400 });
     }
 
     const cleanedUrl = normalizeVideoUrl(videoUrl);
