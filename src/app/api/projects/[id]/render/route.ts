@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProject, updateProject } from '@/lib/db';
 import { renderClip } from '@/lib/ffmpeg';
+import { getVideoDetails } from '@/lib/youtube';
 import { RenderResult } from '@/types/project';
 
 const MAX_CLIP_DURATION_SECONDS = 300;
+
+function isFfmpeg403Error(message: string): boolean {
+  return /403 Forbidden/i.test(message) || /HTTP error 403/i.test(message);
+}
 
 interface RenderRequest {
   start: number;
@@ -40,17 +45,7 @@ export async function POST(
   updateProject(id, { status: 'rendering', error: null });
 
   (async () => {
-    try {
-      const output = await renderClip({
-        projectId: id,
-        videoUrl: project.downloadUrl as string,
-        start,
-        end,
-        srt: project.srt || undefined,
-        burnSubtitles,
-        clipIndex,
-      });
-
+    const saveRenderResult = (output: { path: string; url: string; duration: number; subtitle: boolean }) => {
       const renderResult: RenderResult = {
         path: output.path,
         url: output.url,
@@ -63,8 +58,52 @@ export async function POST(
       const currentProject = getProject(id);
       const renders = [...(currentProject?.renders || []), renderResult];
       updateProject(id, { renders, status: 'done' });
+    };
+
+    try {
+      const output = await renderClip({
+        projectId: id,
+        videoUrl: project.downloadUrl as string,
+        start,
+        end,
+        srt: project.srt || undefined,
+        burnSubtitles,
+        clipIndex,
+      });
+      saveRenderResult(output);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Render failed';
+
+      if (isFfmpeg403Error(message)) {
+        try {
+          const refreshed = await getVideoDetails(project.videoId || project.sourceUrl);
+          if (refreshed.downloadUrl) {
+            updateProject(id, {
+              downloadUrl: refreshed.downloadUrl,
+              title: refreshed.title,
+              duration: refreshed.duration,
+              thumbnail: refreshed.thumbnail,
+              channel: refreshed.channel,
+            });
+
+            const retriedOutput = await renderClip({
+              projectId: id,
+              videoUrl: refreshed.downloadUrl,
+              start,
+              end,
+              srt: project.srt || undefined,
+              burnSubtitles,
+              clipIndex,
+            });
+
+            saveRenderResult(retriedOutput);
+            return;
+          }
+        } catch {
+          // Fall through to original error handling
+        }
+      }
+
       updateProject(id, { status: 'error', error: message });
     }
   })();
