@@ -85,7 +85,7 @@ function getRapidApiKey(): string {
 
 function getBluesmindsApiKey(): string {
   const raw = (process.env.OPENAI_API_KEY || process.env.BLUESMINDS_API_KEY || '').trim();
-  if (!raw) throw new Error('BLUESMINDS_API_KEY is missing');
+  if (!raw) throw new Error('OPENAI_API_KEY or BLUESMINDS_API_KEY is missing');
   if (/^Bearer\s+/i.test(raw)) {
     return raw.replace(/^Bearer\s+/i, '').trim();
   }
