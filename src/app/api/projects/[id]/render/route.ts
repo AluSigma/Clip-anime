@@ -99,9 +99,17 @@ export async function POST(
             saveRenderResult(retriedOutput);
             return;
           }
+          updateProject(id, {
+            status: 'error',
+            error: `Original error: ${message}. Retry skipped: failed to obtain refreshed download URL.`,
+          });
+          return;
         } catch (retryErr: unknown) {
           const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          updateProject(id, { status: 'error', error: `${message}; refresh retry failed: ${retryMessage}` });
+          updateProject(id, {
+            status: 'error',
+            error: `Original error: ${message}. Retry attempt failed: ${retryMessage}`,
+          });
           return;
         }
       }
