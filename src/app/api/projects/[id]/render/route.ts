@@ -46,6 +46,15 @@ export async function POST(
   updateProject(id, { status: 'rendering', error: null });
 
   (async () => {
+    const baseRenderOptions = {
+      projectId: id,
+      start,
+      end,
+      srt: project.srt || undefined,
+      burnSubtitles,
+      clipIndex,
+    };
+
     const saveRenderResult = (output: RenderOutput) => {
       const renderResult: RenderResult = {
         path: output.path,
@@ -63,13 +72,8 @@ export async function POST(
 
     try {
       const output = await renderClip({
-        projectId: id,
+        ...baseRenderOptions,
         videoUrl: project.downloadUrl as string,
-        start,
-        end,
-        srt: project.srt || undefined,
-        burnSubtitles,
-        clipIndex,
       });
       saveRenderResult(output);
     } catch (err: unknown) {
@@ -77,6 +81,9 @@ export async function POST(
 
       if (isFfmpeg403Error(message)) {
         try {
+          if (!project.videoId) {
+            throw new Error('Cannot refresh download URL because project videoId is missing');
+          }
           const refreshed = await getVideoDetails(project.videoId);
           if (refreshed.downloadUrl) {
             updateProject(id, {
@@ -84,13 +91,8 @@ export async function POST(
             });
 
             const retriedOutput = await renderClip({
-              projectId: id,
+              ...baseRenderOptions,
               videoUrl: refreshed.downloadUrl,
-              start,
-              end,
-              srt: project.srt || undefined,
-              burnSubtitles,
-              clipIndex,
             });
 
             saveRenderResult(retriedOutput);
@@ -98,7 +100,7 @@ export async function POST(
           }
           updateProject(id, {
             status: 'error',
-            error: `Original error: ${message}. Retry skipped: no valid download URL available after refresh.`,
+            error: `Original error: ${message}. Retry skipped: refresh succeeded but returned a missing/empty downloadUrl.`,
           });
           return;
         } catch (retryErr: unknown) {
