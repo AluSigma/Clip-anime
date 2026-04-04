@@ -209,6 +209,15 @@ function wait(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+function toSafeProviderMessage(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const normalized = input.replace(/\s+/g, ' ').trim();
+  if (!normalized) return null;
+  if (normalized.length > 180) return null;
+  if (/[`$<>]/.test(normalized)) return null;
+  return normalized;
+}
+
 function mapYoutubeApiError(err: unknown): Error {
   if (!axios.isAxiosError(err)) {
     return err instanceof Error ? err : new Error('Failed to fetch YouTube video details');
@@ -216,10 +225,10 @@ function mapYoutubeApiError(err: unknown): Error {
 
   const status = err.response?.status;
   if (status === 400) {
-    return new Error('Failed to fetch video details (provider returned 400). Ensure the video URL is valid and publicly accessible.');
+    return new Error('Failed to fetch video details. Please ensure the video URL is valid and publicly accessible.');
   }
   if (status === 401 || status === 403) {
-    return new Error('Failed to fetch video details due to API authorization. Check RAPIDAPI_KEY and provider access.');
+    return new Error('Failed to fetch video details due to provider authorization.');
   }
   if (status === 404) {
     return new Error('Video details were not found by provider. Please verify the YouTube link.');
@@ -227,8 +236,9 @@ function mapYoutubeApiError(err: unknown): Error {
 
   const providerPayload = asRecord(err.response?.data);
   const providerMessage = providerPayload ? getFirstString(providerPayload, ['message', 'error', 'detail']) : null;
-  if (providerMessage) {
-    return new Error(providerMessage);
+  const safeProviderMessage = toSafeProviderMessage(providerMessage);
+  if (safeProviderMessage) {
+    return new Error(safeProviderMessage);
   }
 
   return new Error(err.message || 'Failed to fetch YouTube video details');
