@@ -5,6 +5,85 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
+let resolvedFfmpegBinary: string | null = null;
+
+function isExecutableBinary(filePath: string): boolean {
+  try {
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile()) {
+      return false;
+    }
+
+    if (process.platform === 'win32') {
+      return true;
+    }
+
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveFfmpegBinary(): string {
+  if (resolvedFfmpegBinary) {
+    return resolvedFfmpegBinary;
+  }
+
+  const configured = process.env.FFMPEG_PATH?.trim();
+  const attemptedPaths: string[] = [];
+
+  if (configured) {
+    const resolvedConfigured = path.isAbsolute(configured)
+      ? configured
+      : path.resolve(process.cwd(), configured);
+    attemptedPaths.push(resolvedConfigured);
+    if (!isExecutableBinary(resolvedConfigured)) {
+      throw new Error(
+        `Invalid FFMPEG_PATH: "${configured}" does not point to an executable ffmpeg binary.`,
+      );
+    }
+    resolvedFfmpegBinary = resolvedConfigured;
+    return resolvedFfmpegBinary;
+  }
+
+  const candidates = process.platform === 'win32'
+    ? [
+      'C:\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe',
+    ]
+    : [
+      '/usr/local/bin/ffmpeg',
+      '/usr/bin/ffmpeg',
+      '/opt/homebrew/bin/ffmpeg',
+      '/snap/bin/ffmpeg',
+    ];
+
+  for (const candidate of candidates) {
+    attemptedPaths.push(candidate);
+    if (isExecutableBinary(candidate)) {
+      resolvedFfmpegBinary = candidate;
+      return resolvedFfmpegBinary;
+    }
+  }
+
+  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const entry of pathEntries) {
+    const binaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const candidate = path.join(entry, binaryName);
+    attemptedPaths.push(candidate);
+    if (isExecutableBinary(candidate)) {
+      resolvedFfmpegBinary = candidate;
+      return resolvedFfmpegBinary;
+    }
+  }
+
+  throw new Error(
+    `FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to an executable ffmpeg binary path. Checked: ${attemptedPaths.join(', ')}`,
+  );
+}
+
 function isReadOnlyTaskPath(targetPath: string): boolean {
   const normalized = path.resolve(targetPath);
   return normalized === '/var/task' || normalized.startsWith('/var/task/');
@@ -115,7 +194,8 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
   );
 
   try {
-    await execFileAsync('ffmpeg', args, { timeout: 300000 });
+    const ffmpegBin = resolveFfmpegBinary();
+    await execFileAsync(ffmpegBin, args, { timeout: 300000 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     // If subtitle burn-in failed, retry without subtitles
