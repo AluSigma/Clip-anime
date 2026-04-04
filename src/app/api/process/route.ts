@@ -18,6 +18,7 @@ const MIN_VALID_FILE_SIZE_BYTES = 50000;
 const MAX_CLIPS = 6;
 const OPENAI_CHAT_COMPLETIONS_URL =
   process.env.OPENAI_API_BASE_URL?.trim() || 'https://api.openai.com/v1/chat/completions';
+const SAVENOW_API_KEY = process.env.RAPIDAPI_KEY || '203e3387bdmsh778c780492564ddp1a2c8ajsn3e8c40099188';
 
 interface ClipSpec {
   title: string;
@@ -75,12 +76,6 @@ function parseTimeToSeconds(time: string): number {
   }
 
   return minutes * 60 + seconds;
-}
-
-function getRapidApiKey(): string {
-  const key = (process.env.RAPIDAPI_KEY || '').trim();
-  if (!key) throw new Error('RAPIDAPI_KEY is missing');
-  return key;
 }
 
 function getBluesmindsApiKey(): string {
@@ -151,12 +146,13 @@ function getFfmpegBin(): string {
   return 'ffmpeg';
 }
 
-async function initiate(videoUrl: string): Promise<{ jobId: string; title: string }> {
+async function initiate(cleanVideoUrl: string): Promise<{ jobId: string; title: string }> {
+  console.log('[🔑] API Key Status:', SAVENOW_API_KEY ? 'Loaded' : 'Empty');
   const { data } = await axios.get('https://p.savenow.to/ajax/download.php', {
     params: {
       format: '720',
-      url: videoUrl,
-      apikey: getRapidApiKey(),
+      url: cleanVideoUrl,
+      apikey: SAVENOW_API_KEY,
       add_info: '1',
       audio_quality: '128',
       allow_extended_duration: '1',
