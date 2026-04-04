@@ -12,6 +12,10 @@ const execFileAsync = promisify(execFile);
 export const dynamic = 'force-dynamic';
 
 type JsonRecord = Record<string, unknown>;
+const POLLING_INTERVAL_MS = 2000;
+const MAX_POLLING_ATTEMPTS = 20;
+const MIN_VALID_FILE_SIZE_BYTES = 50 * 1024;
+const MAX_CLIPS = 6;
 
 interface ClipSpec {
   title: string;
@@ -66,9 +70,12 @@ function getRapidApiKey(): string {
 }
 
 function getBluesmindsApiKey(): string {
-  const key = (process.env.BLUESMINDS_API_KEY || '').replace(/^Bearer\s+/i, '').trim();
-  if (!key) throw new Error('BLUESMINDS_API_KEY is missing');
-  return key;
+  const raw = (process.env.BLUESMINDS_API_KEY || '').trim();
+  if (!raw) throw new Error('BLUESMINDS_API_KEY is missing');
+  if (/^Bearer\s+/i.test(raw)) {
+    return raw.replace(/^Bearer\s+/i, '').trim();
+  }
+  return raw;
 }
 
 function getFfmpegBin(): string {
@@ -118,7 +125,7 @@ async function initiate(videoUrl: string): Promise<{ jobId: string; title: strin
 }
 
 async function pollDownloadUrl(jobId: string): Promise<string> {
-  for (let i = 0; i < 20; i += 1) {
+  for (let i = 0; i < MAX_POLLING_ATTEMPTS; i += 1) {
     const { data } = await axios.get('https://p.savenow.to/ajax/progress', {
       params: { id: jobId },
       timeout: 30000,
@@ -134,7 +141,7 @@ async function pollDownloadUrl(jobId: string): Promise<string> {
       throw new Error('Download completed but no download_url available');
     }
 
-    await sleep(2000);
+    await sleep(POLLING_INTERVAL_MS);
   }
 
   throw new Error('Timeout while polling download progress');
@@ -166,15 +173,15 @@ async function streamDownloadToFile(downloadUrl: string, title: string): Promise
   });
 
   const stats = fs.statSync(inputPath);
-  if (stats.size <= 50 * 1024) {
-    throw new Error('Downloaded file is too small (< 50KB). Likely blocked by source (403).');
+  if (stats.size <= MIN_VALID_FILE_SIZE_BYTES) {
+    throw new Error('Downloaded file is too small (<= 50KB). Download may have failed or been interrupted.');
   }
 
   return inputPath;
 }
 
 async function analyzeWithAi(videoTitle: string): Promise<ClipSpec[]> {
-  const instruction = "Strict JSON Array only: [{'title':'...', 'start_time':'MM:SS', 'end_time':'MM:SS'}]";
+  const instruction = 'Strict JSON Array only: [{"title":"...","start_time":"MM:SS","end_time":"MM:SS"}]';
 
   const prompt = [
     'You are a short-video editor AI for YouTube Shorts.',
@@ -207,8 +214,13 @@ async function analyzeWithAi(videoTitle: string): Promise<ClipSpec[]> {
   );
 
   const content = String(data?.choices?.[0]?.message?.content || '').trim();
-  const normalized = content.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
-  const parsed = JSON.parse(normalized);
+  const normalized = content.replace(/```(?:json)?/gi, '').trim();
+  const arrayStart = normalized.indexOf('[');
+  const arrayEnd = normalized.lastIndexOf(']');
+  if (arrayStart === -1 || arrayEnd === -1 || arrayEnd < arrayStart) {
+    throw new Error('AI returned non-JSON array response');
+  }
+  const parsed = JSON.parse(normalized.slice(arrayStart, arrayEnd + 1));
 
   if (!Array.isArray(parsed) || parsed.length === 0) {
     throw new Error('AI returned invalid clip list');
@@ -224,7 +236,7 @@ async function analyzeWithAi(videoTitle: string): Promise<ClipSpec[]> {
       };
     })
     .filter((item) => item.start_time && item.end_time)
-    .slice(0, 6);
+    .slice(0, MAX_CLIPS);
 }
 
 async function renderClip(params: {
@@ -313,7 +325,10 @@ export async function POST(req: NextRequest) {
           downloadUrl: `/clips/${encodeURIComponent(filename)}`,
         });
       } catch (clipErr) {
-        console.warn('Clip render skipped:', clipErr instanceof Error ? clipErr.message : String(clipErr));
+        console.warn(
+          `Clip render skipped (index=${i}, title="${clip.title}")`,
+          clipErr instanceof Error ? clipErr.message : String(clipErr),
+        );
       }
     }
 

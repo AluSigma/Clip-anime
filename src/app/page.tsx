@@ -39,8 +39,15 @@ export default function Home() {
 
     try {
       const parsed = new URL(value);
-      const host = parsed.hostname.toLowerCase();
-      return host.includes('youtube.com') || host.includes('youtu.be');
+      const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+      return (
+        host === 'youtube.com' ||
+        host === 'www.youtube.com' ||
+        host === 'm.youtube.com' ||
+        host === 'music.youtube.com' ||
+        host === 'youtu.be' ||
+        host === 'www.youtu.be'
+      );
     } catch {
       return false;
     }
