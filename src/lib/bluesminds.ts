@@ -82,7 +82,7 @@ Return ONLY valid JSON array. No markdown, no explanation.`;
   const metaDescription = (context?.description || '').trim();
   const metaBlock = `Video metadata:
 Title: ${metaTitle || '(unknown)'}
-Description: ${metaDescription || '(none)'}`;
+Description: ${metaDescription.length > 0 ? metaDescription : '(none)'}`;
 
   const userPrompt = `Analyze these transcript chunks and return the top ${targetCount} most engaging segments as a JSON array.
 

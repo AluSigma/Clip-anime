@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -6,7 +7,12 @@ const BASE = 'https://youtube-info-download-api.p.rapidapi.com';
 const POLLING_INTERVAL_MS = 2000;
 const POLLING_TIMEOUT_MS = 8 * 60 * 1000;
 const DOWNLOAD_DIR = path.join(process.cwd(), 'public', 'clips', 'sources');
-const SOURCE_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const HOURS_IN_MS = 60 * 60 * 1000;
+const SOURCE_CACHE_MAX_AGE_MS = 6 * HOURS_IN_MS; // keep cached source up to 6 hours
+const QUALITY_SCORE_720 = 300;
+const QUALITY_SCORE_360 = 200;
+const QUALITY_SCORE_MP4 = 100;
+const QUALITY_SCORE_FALLBACK = 10;
 
 function getRapidApiKey(): string {
   const key = (process.env.RAPIDAPI_KEY || '').trim();
@@ -132,18 +138,30 @@ function findProgressUrl(payload: unknown): string | null {
 
 function qualityRank(label: string): number {
   const normalized = label.toLowerCase();
-  if (normalized.includes('720')) return 300;
-  if (normalized.includes('360')) return 200;
-  if (normalized.includes('mp4')) return 100;
-  return 10;
+  if (normalized.includes('720')) return QUALITY_SCORE_720;
+  if (normalized.includes('360')) return QUALITY_SCORE_360;
+  if (normalized.includes('mp4')) return QUALITY_SCORE_MP4;
+  return QUALITY_SCORE_FALLBACK;
 }
 
 function isLikelyMediaUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url)) return false;
-  return (
-    /\.(mp4|m4a|webm)(\?|$)/i.test(url)
-    || /googlevideo|videoplayback|ytimg|youtube|rapidapi/i.test(url)
-  );
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      /\.(mp4|m4a|webm)(\?|$)/i.test(url)
+      || host === 'googlevideo.com'
+      || host.endsWith('.googlevideo.com')
+      || host === 'ytimg.com'
+      || host.endsWith('.ytimg.com')
+      || host === 'youtube.com'
+      || host.endsWith('.youtube.com')
+      || host === 'youtu.be'
+    );
+  } catch {
+    return false;
+  }
 }
 
 function collectCandidateUrls(payload: unknown): UrlWithScore[] {
@@ -277,7 +295,7 @@ async function cacheVideoStream(videoId: string, downloadUrl: string): Promise<{
     };
   }
 
-  const filename = `${videoId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`;
+  const filename = `${videoId}_${Date.now()}_${randomBytes(4).toString('hex')}.mp4`;
   const outputPath = path.join(DOWNLOAD_DIR, filename);
 
   const response = await axios.get(downloadUrl, {
@@ -302,12 +320,10 @@ async function cacheVideoStream(videoId: string, downloadUrl: string): Promise<{
   const localUrl = `/clips/sources/${encodeURIComponent(filename)}`;
 
   for (const old of cachedFiles) {
-    if (old.fullPath !== outputPath) {
-      try {
-        fs.unlinkSync(old.fullPath);
-      } catch {
-        // ignore cleanup failure
-      }
+    try {
+      fs.unlinkSync(old.fullPath);
+    } catch {
+      // ignore cleanup failure
     }
   }
 
