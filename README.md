@@ -15,7 +15,7 @@ Auto-generate short vertical clips from YouTube videos using AI.
 ### Prerequisites
 
 - Node.js 18+
-- FFmpeg available in runtime (system install, or set `FFMPEG_PATH`)
+- FFmpeg available in runtime (system install, set `FFMPEG_PATH`, or use bundled fallback)
 - API keys (see below)
 
 ### Installation
@@ -44,7 +44,7 @@ Required variables:
 | `BLUESMINDS_MODEL` | Model name (default: `gpt-4o-mini`) |
 | `DATA_DIR` | Directory for project data (default: `./data`) |
 | `CLIPS_DIR` | Directory for rendered clips (default: `./public/clips`) |
-| `FFMPEG_PATH` | Optional absolute path to ffmpeg binary. Required when ffmpeg is not in `PATH` |
+| `FFMPEG_PATH` | Optional absolute path to ffmpeg binary. If unset, app also tries bundled `@ffmpeg-installer/ffmpeg` binary |
 
 ### Running Locally
 
@@ -78,7 +78,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 - FFmpeg setup depends on deployment target:
   - Local/VPS/container: install system `ffmpeg` and ensure it is available in `PATH`
-  - Serverless (e.g. Vercel/Lambda): provide a bundled ffmpeg binary (artifact/layer) and set `FFMPEG_PATH`
+  - Serverless (e.g. Vercel/Lambda): bundled `@ffmpeg-installer/ffmpeg` fallback is attempted automatically; for custom binaries (artifact/layer), set `FFMPEG_PATH`
 - RapidAPI free tier has request limits
 - AssemblyAI transcription takes 1-5 minutes depending on video length
 - Rendered clips are stored in `public/clips/` — implement cleanup for production

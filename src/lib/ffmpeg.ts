@@ -79,12 +79,38 @@ function resolveFfmpegBinary(): string {
     }
   }
 
+  const bundledBinary = resolveBundledFfmpegBinary();
+  if (bundledBinary) {
+    attemptedPaths.push(bundledBinary);
+    if (isExecutableBinary(bundledBinary)) {
+      resolvedFfmpegBinary = bundledBinary;
+      return resolvedFfmpegBinary;
+    }
+  }
+
   const serverlessHint = isServerlessEnvironment()
     ? ' Serverless environment detected: provide a bundled ffmpeg binary (e.g. Lambda layer or deployment artifact) and set FFMPEG_PATH to that executable path.'
     : '';
   throw new Error(
     `FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to an executable ffmpeg binary path. Checked: ${attemptedPaths.join(', ')}.${serverlessHint}`,
   );
+}
+
+function resolveBundledFfmpegBinary(): string | null {
+  const platform = `${process.platform}-${process.arch}`;
+  const binaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const candidates = [
+    path.join(process.cwd(), 'node_modules', '@ffmpeg-installer', platform, binaryName),
+    path.join(__dirname, '..', '..', '..', 'node_modules', '@ffmpeg-installer', platform, binaryName),
+  ];
+
+  for (const candidate of candidates) {
+    if (isExecutableBinary(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function isReadOnlyTaskPath(targetPath: string): boolean {
