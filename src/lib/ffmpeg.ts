@@ -79,8 +79,11 @@ function resolveFfmpegBinary(): string {
     }
   }
 
+  const serverlessHint = isServerlessEnvironment()
+    ? ' Serverless environment detected: provide a bundled ffmpeg binary (e.g. Lambda layer or deployment artifact) and set FFMPEG_PATH to that executable path.'
+    : '';
   throw new Error(
-    `FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to an executable ffmpeg binary path. Checked: ${attemptedPaths.join(', ')}`,
+    `FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to an executable ffmpeg binary path. Checked: ${attemptedPaths.join(', ')}.${serverlessHint}`,
   );
 }
 
