@@ -25,7 +25,7 @@ function isExecutableBinary(filePath: string): boolean {
   }
 }
 
-function resolveFfmpegBinary(): string {
+async function resolveFfmpegBinary(): Promise<string> {
   if (resolvedFfmpegBinary) {
     return resolvedFfmpegBinary;
   }
@@ -79,12 +79,30 @@ function resolveFfmpegBinary(): string {
     }
   }
 
+  const bundledBinary = await resolveBundledFfmpegBinary();
+  if (bundledBinary) {
+    attemptedPaths.push(bundledBinary);
+    if (isExecutableBinary(bundledBinary)) {
+      resolvedFfmpegBinary = bundledBinary;
+      return resolvedFfmpegBinary;
+    }
+  }
+
   const serverlessHint = isServerlessEnvironment()
     ? ' Serverless environment detected: provide a bundled ffmpeg binary (e.g. Lambda layer or deployment artifact) and set FFMPEG_PATH to that executable path.'
     : '';
   throw new Error(
     `FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to an executable ffmpeg binary path. Checked: ${attemptedPaths.join(', ')}.${serverlessHint}`,
   );
+}
+
+async function resolveBundledFfmpegBinary(): Promise<string | null> {
+  try {
+    const installer = await import('@ffmpeg-installer/ffmpeg');
+    return installer.path && isExecutableBinary(installer.path) ? installer.path : null;
+  } catch {
+    return null;
+  }
 }
 
 function isReadOnlyTaskPath(targetPath: string): boolean {
@@ -197,7 +215,7 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
   );
 
   try {
-    const ffmpegBin = resolveFfmpegBinary();
+    const ffmpegBin = await resolveFfmpegBinary();
     await execFileAsync(ffmpegBin, args, { timeout: 300000 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
