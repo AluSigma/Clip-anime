@@ -5,6 +5,28 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
+
+function resolveFfmpegBinary(): string {
+  const configured = process.env.FFMPEG_PATH?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  const candidates = process.platform === 'win32'
+    ? ['ffmpeg.exe', 'C:\\ffmpeg\\bin\\ffmpeg.exe']
+    : ['/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return 'ffmpeg';
+}
+
+const FFMPEG_BIN = resolveFfmpegBinary();
+
 function isReadOnlyTaskPath(targetPath: string): boolean {
   const normalized = path.resolve(targetPath);
   return normalized === '/var/task' || normalized.startsWith('/var/task/');
@@ -115,9 +137,14 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
   );
 
   try {
-    await execFileAsync('ffmpeg', args, { timeout: 300000 });
+    await execFileAsync(FFMPEG_BIN, args, { timeout: 300000 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('ENOENT')) {
+      throw new Error(
+        `FFmpeg render failed: FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to the ffmpeg binary location. (current: ${FFMPEG_BIN})`,
+      );
+    }
     // If subtitle burn-in failed, retry without subtitles
     if (burnSubtitles && srt && message.includes('subtitles')) {
       return renderClip({ ...options, burnSubtitles: false });
