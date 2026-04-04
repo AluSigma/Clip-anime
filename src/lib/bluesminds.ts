@@ -123,7 +123,7 @@ Ensure each selected segment is 30-90 seconds long. Merge adjacent chunks if nee
     .replace(/```json\s*/gi, '')
     .replace(/```/g, '')
     .trim();
-  const arrayCandidate = cleanedResponse.match(/\[[\s\S]*\]/)?.[0] || cleanedResponse;
+  const arrayCandidate = cleanedResponse.match(/\[[\s\S]*?\]/)?.[0] || cleanedResponse;
 
   let clipsData: HighlightCandidate[];
   try {
