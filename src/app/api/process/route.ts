@@ -332,7 +332,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = (await req.json()) as { videoUrl?: string; url?: string };
-    const videoUrl = (body?.videoUrl || body?.url || '').trim();
+    const videoUrl = body?.videoUrl?.trim() || body?.url?.trim() || '';
 
     if (!videoUrl) {
       return NextResponse.json({ success: false, error: 'URL is required' }, { status: 400 });
