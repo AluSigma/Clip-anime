@@ -39,7 +39,10 @@ export async function POST(
         chunks = buildTranscriptChunks(words, 30000);
       }
 
-      const highlights = await scoreHighlights(chunks, 5);
+      const highlights = await scoreHighlights(chunks, 5, {
+        title: project.title,
+        description: project.description,
+      });
       updateProject(id, { highlightCandidates: highlights, status: 'scored' });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Highlight scoring failed';

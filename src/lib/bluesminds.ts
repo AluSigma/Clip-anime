@@ -62,7 +62,8 @@ export function buildTranscriptChunks(
 
 export async function scoreHighlights(
   chunks: TranscriptChunk[],
-  targetCount = 5
+  targetCount = 5,
+  context?: { title?: string | null; description?: string | null }
 ): Promise<HighlightCandidate[]> {
   const model = process.env.BLUESMINDS_MODEL || 'gpt-4o-mini';
 
@@ -77,7 +78,15 @@ Score each segment from 0-100 based on:
 
 Return ONLY valid JSON array. No markdown, no explanation.`;
 
+  const metaTitle = (context?.title || '').trim();
+  const metaDescription = (context?.description || '').trim();
+  const metaBlock = `Video metadata:
+Title: ${metaTitle || '(unknown)'}
+Description: ${metaDescription || '(none)'}`;
+
   const userPrompt = `Analyze these transcript chunks and return the top ${targetCount} most engaging segments as a JSON array.
+
+${metaBlock}
 
 Transcript chunks:
 ${JSON.stringify(chunks, null, 2)}

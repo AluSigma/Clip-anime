@@ -31,10 +31,12 @@ export interface Project {
   sourceUrl: string;
   videoId: string;
   title: string;
+  description: string | null;
   duration: number; // seconds
   thumbnail: string | null;
   channel: string | null;
   downloadUrl: string | null;
+  sourceFilePath?: string | null;
   transcriptText: string | null;
   srt: string | null;
   highlightCandidates: HighlightCandidate[];
