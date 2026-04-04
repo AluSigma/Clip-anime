@@ -151,26 +151,6 @@ function getFfmpegBin(): string {
   return 'ffmpeg';
 }
 
-function extractDownloadUrl(progressPayload: JsonRecord): string | null {
-  const direct = typeof progressPayload.download_url === 'string' ? progressPayload.download_url.trim() : '';
-  if (direct) return direct;
-
-  const alternatives = progressPayload.alternative_download_urls;
-  if (Array.isArray(alternatives)) {
-    for (const candidate of alternatives) {
-      if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-      const obj = toRecord(candidate);
-      if (!obj) continue;
-      const url = typeof obj.url === 'string' ? obj.url.trim() : '';
-      if (url) return url;
-      const alt = typeof obj.download_url === 'string' ? obj.download_url.trim() : '';
-      if (alt) return alt;
-    }
-  }
-
-  return null;
-}
-
 async function initiate(videoUrl: string): Promise<{ jobId: string; title: string }> {
   const { data } = await axios.get('https://p.savenow.to/ajax/download.php', {
     params: {
