@@ -179,18 +179,11 @@ export async function renderClip(options: RenderOptions): Promise<RenderOutput> 
     outPath,
   );
 
-  let ffmpegBin = 'ffmpeg';
-
   try {
-    ffmpegBin = resolveFfmpegBinary();
+    const ffmpegBin = resolveFfmpegBinary();
     await execFileAsync(ffmpegBin, args, { timeout: 300000 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    if (message.includes('ENOENT')) {
-      throw new Error(
-        `FFmpeg render failed: FFmpeg binary not found. Install ffmpeg and ensure it is in PATH, or set FFMPEG_PATH to the ffmpeg binary location. (current: ${ffmpegBin})`,
-      );
-    }
     // If subtitle burn-in failed, retry without subtitles
     if (burnSubtitles && srt && message.includes('subtitles')) {
       return renderClip({ ...options, burnSubtitles: false });
