@@ -44,7 +44,7 @@ Required variables:
 | `BLUESMINDS_MODEL` | Model name (default: `gpt-4o-mini`) |
 | `DATA_DIR` | Directory for project data (default: `./data`) |
 | `CLIPS_DIR` | Directory for rendered clips (default: `./public/clips`) |
-| `FFMPEG_PATH` | Optional path to ffmpeg binary (absolute, or relative to project root). Required when ffmpeg is not in `PATH` |
+| `FFMPEG_PATH` | Optional absolute path to ffmpeg binary. Required when ffmpeg is not in `PATH` |
 
 ### Running Locally
 
